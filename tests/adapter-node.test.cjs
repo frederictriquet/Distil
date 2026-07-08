@@ -6,9 +6,9 @@
 //
 // The dynamic checks (install/build/check/run) operate on an isolated copy
 // of the project rather than the repo root: `node --test tests/` runs test
-// files concurrently, and the pre-existing scaffold test also runs
-// `npm install` / `npm run build` in place, which would otherwise race on
-// the shared node_modules/.svelte-kit/build directories.
+// files concurrently, and several suites each run `npm install` /
+// `npm run build`, which would race on a shared node_modules/.svelte-kit/build
+// if they all worked out of the repo root.
 //
 // Run with: node --test tests/
 'use strict';
@@ -19,9 +19,47 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
+const net = require('node:net');
 const { spawnSync, spawn } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
+
+// npm ships as npm.cmd on Windows; spawnSync does not resolve it without a
+// shell, so pick the right executable name per platform for portability.
+const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+
+// Run an npm command and fail loudly (with the real cause) if it could not be
+// spawned at all — e.g. ENOENT when npm is missing, or the timeout firing.
+// Without this, spawnSync returns { status: null, error: <Error> } and a bare
+// `assert.equal(result.status, 0)` reports a misleading "exited null" instead
+// of the actual reason.
+function runNpm(args, cwd) {
+	const result = spawnSync(NPM, args, {
+		cwd,
+		encoding: 'utf8',
+		timeout: 5 * 60 * 1000
+	});
+	assert.equal(
+		result.error,
+		undefined,
+		`\`npm ${args.join(' ')}\` could not be spawned or timed out and never ran: ${result.error}`
+	);
+	return result;
+}
+
+// Reserve a free TCP port on the loopback interface and return it, so the
+// spawned server binds to an OS-allocated ephemeral port instead of a
+// hardcoded one that could already be in use under concurrent test runs.
+function getFreePort() {
+	return new Promise((resolve, reject) => {
+		const srv = net.createServer();
+		srv.once('error', reject);
+		srv.listen(0, '127.0.0.1', () => {
+			const { port } = srv.address();
+			srv.close((err) => (err ? reject(err) : resolve(port)));
+		});
+	});
+}
 
 function readJson(relPath) {
 	return JSON.parse(fs.readFileSync(path.join(ROOT, relPath), 'utf8'));
@@ -121,10 +159,10 @@ test('the README documents how to run the production Node server', () => {
 
 describe('npm install / build / check / run, in an isolated copy of the project', () => {
 	// Isolated in its own temp directory (rather than run against ROOT) so
-	// this suite doesn't race with the pre-existing scaffold test file,
-	// which also runs `npm install` / `npm run build` directly in ROOT and
-	// would otherwise corrupt this suite's node_modules/.svelte-kit/build
-	// output when both test files run concurrently under `node --test`.
+	// this suite doesn't race with the other test files, which also run
+	// `npm install` / `npm run build`; sharing the repo root's
+	// node_modules/.svelte-kit/build across suites running concurrently under
+	// `node --test` would otherwise corrupt this suite's output.
 	let workDir;
 
 	before(() => {
@@ -154,21 +192,13 @@ describe('npm install / build / check / run, in an isolated copy of the project'
 	});
 
 	test('npm install succeeds against the committed package-lock.json', () => {
-		const result = spawnSync('npm', ['install', '--no-audit', '--no-fund'], {
-			cwd: workDir,
-			encoding: 'utf8',
-			timeout: 5 * 60 * 1000
-		});
+		const result = runNpm(['install', '--no-audit', '--no-fund'], workDir);
 
 		assert.equal(result.status, 0, `npm install failed:\n${result.stdout}\n${result.stderr}`);
 	});
 
 	test('npm run build produces a standalone Node server entry point', () => {
-		const result = spawnSync('npm', ['run', 'build'], {
-			cwd: workDir,
-			encoding: 'utf8',
-			timeout: 5 * 60 * 1000
-		});
+		const result = runNpm(['run', 'build'], workDir);
 
 		assert.equal(result.status, 0, `npm run build failed:\n${result.stdout}\n${result.stderr}`);
 		assert.match(
@@ -183,11 +213,7 @@ describe('npm install / build / check / run, in an isolated copy of the project'
 	});
 
 	test('npm run check still succeeds after switching adapters', () => {
-		const result = spawnSync('npm', ['run', 'check'], {
-			cwd: workDir,
-			encoding: 'utf8',
-			timeout: 5 * 60 * 1000
-		});
+		const result = runNpm(['run', 'check'], workDir);
 
 		assert.equal(result.status, 0, `npm run check failed:\n${result.stdout}\n${result.stderr}`);
 	});
@@ -198,7 +224,9 @@ describe('npm install / build / check / run, in an isolated copy of the project'
 			'build/ must exist (built by a previous test in this suite)'
 		);
 
-		const port = 5734;
+		// Bind to an OS-allocated ephemeral port rather than a fixed one, so
+		// concurrent test runs (or a leftover process) can't collide on it.
+		const port = await getFreePort();
 		const child = spawn('node', ['build'], {
 			cwd: workDir,
 			env: { ...process.env, PORT: String(port), HOST: '127.0.0.1' },
@@ -213,17 +241,26 @@ describe('npm install / build / check / run, in an isolated copy of the project'
 		try {
 			const statusCode = await new Promise((resolve, reject) => {
 				const start = Date.now();
+				const retryOrFail = (cause) => {
+					if (Date.now() - start > 15000) {
+						reject(new Error(`server never became reachable on port ${port}: ${cause}. stderr:\n${stderr}`));
+					} else {
+						setTimeout(tryConnect, 250);
+					}
+				};
 				const tryConnect = () => {
 					const req = http.get({ host: '127.0.0.1', port, path: '/', timeout: 1000 }, (res) => {
 						res.resume();
 						resolve(res.statusCode);
 					});
-					req.on('error', () => {
-						if (Date.now() - start > 15000) {
-							reject(new Error(`server never became reachable on port ${port}. stderr:\n${stderr}`));
-						} else {
-							setTimeout(tryConnect, 250);
-						}
+					// A socket timeout does not abort the request on its own; without
+					// destroying it here the request would hang and the test would
+					// stall instead of retrying, so handle 'timeout' explicitly.
+					req.on('timeout', () => {
+						req.destroy(new Error('request timed out'));
+					});
+					req.on('error', (err) => {
+						retryOrFail(err.message);
 					});
 				};
 				tryConnect();

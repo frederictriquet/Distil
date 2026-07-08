@@ -28,12 +28,35 @@ const { pathToFileURL } = require('node:url');
 
 const ROOT = path.resolve(__dirname, '..');
 
+// npm ships as npm.cmd on Windows; spawnSync does not resolve it without a
+// shell, so pick the right executable name per platform for portability.
+const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+
 function readText(relPath) {
 	return fs.readFileSync(path.join(ROOT, relPath), 'utf8');
 }
 
 function exists(relPath) {
 	return fs.existsSync(path.join(ROOT, relPath));
+}
+
+// Run an npm command and fail loudly (with the real cause) if it could not be
+// spawned at all — e.g. ENOENT when npm is missing, or the timeout firing.
+// Without this, spawnSync returns { status: null, error: <Error> } and a bare
+// `assert.equal(result.status, 0)` reports a misleading "exited null" instead
+// of the actual reason.
+function runNpm(args, cwd) {
+	const result = spawnSync(NPM, args, {
+		cwd,
+		encoding: 'utf8',
+		timeout: 5 * 60 * 1000
+	});
+	assert.equal(
+		result.error,
+		undefined,
+		`\`npm ${args.join(' ')}\` could not be spawned or timed out and never ran: ${result.error}`
+	);
+	return result;
 }
 
 test('svelte.config.js exists at the repo root', () => {
@@ -133,21 +156,13 @@ describe('npm run build / check still work from the conventional svelte.config.j
 	});
 
 	test('npm install succeeds against the committed package-lock.json', () => {
-		const result = spawnSync('npm', ['install', '--no-audit', '--no-fund'], {
-			cwd: workDir,
-			encoding: 'utf8',
-			timeout: 5 * 60 * 1000
-		});
+		const result = runNpm(['install', '--no-audit', '--no-fund'], workDir);
 
 		assert.equal(result.status, 0, `npm install failed:\n${result.stdout}\n${result.stderr}`);
 	});
 
 	test('npm run build still selects adapter-node and produces a standalone server entry point', () => {
-		const result = spawnSync('npm', ['run', 'build'], {
-			cwd: workDir,
-			encoding: 'utf8',
-			timeout: 5 * 60 * 1000
-		});
+		const result = runNpm(['run', 'build'], workDir);
 
 		assert.equal(result.status, 0, `npm run build failed:\n${result.stdout}\n${result.stderr}`);
 		assert.match(
@@ -162,11 +177,7 @@ describe('npm run build / check still work from the conventional svelte.config.j
 	});
 
 	test('npm run check still passes with 0 errors', () => {
-		const result = spawnSync('npm', ['run', 'check'], {
-			cwd: workDir,
-			encoding: 'utf8',
-			timeout: 5 * 60 * 1000
-		});
+		const result = runNpm(['run', 'check'], workDir);
 
 		assert.equal(result.status, 0, `npm run check failed:\n${result.stdout}\n${result.stderr}`);
 	});
@@ -188,17 +199,8 @@ describe('npm run build / check still work from the conventional svelte.config.j
 			"<script>\n\timport LegacyProps from './LegacyProps.svelte';\n</script>\n\n<LegacyProps label=\"hi\" />\n"
 		);
 
-		const result = spawnSync('npm', ['run', 'check'], {
-			cwd: workDir,
-			encoding: 'utf8',
-			timeout: 5 * 60 * 1000
-		});
+		const result = runNpm(['run', 'check'], workDir);
 
-		assert.equal(
-			result.error,
-			undefined,
-			`npm run check could not be spawned or timed out, so it never actually ran: ${result.error}`
-		);
 		assert.notEqual(
 			result.status,
 			0,

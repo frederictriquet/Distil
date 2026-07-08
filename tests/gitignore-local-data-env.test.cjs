@@ -29,7 +29,16 @@ function readText(relPath) {
 }
 
 function git(args, cwd) {
-	return spawnSync('git', args, { cwd, encoding: 'utf8' });
+	const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+	// A missing git binary (or a spawn timeout) surfaces as result.error with a
+	// null status; assert on it so callers see the real cause instead of
+	// misreading an "exited null" as a legitimate git exit code.
+	assert.equal(
+		result.error,
+		undefined,
+		`\`git ${args.join(' ')}\` could not be spawned: ${result.error}`
+	);
+	return result;
 }
 
 describe('.gitignore excludes local app data and env files (isolated repo)', () => {
@@ -160,11 +169,6 @@ describe('a versioned .env.example documents the expected environment variables'
 			content,
 			/^ORIGIN=https?:\/\/.+$/m,
 			'.env.example should document an ORIGIN=<url> variable'
-		);
-		assert.match(
-			content.toLowerCase(),
-			/origin/,
-			'.env.example should mention ORIGIN'
 		);
 	});
 

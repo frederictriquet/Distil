@@ -26,6 +26,29 @@ const { spawnSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 
+// npm ships as npm.cmd on Windows; spawnSync does not resolve it without a
+// shell, so pick the right executable name per platform for portability.
+const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+
+// Run an npm command and fail loudly (with the real cause) if it could not be
+// spawned at all — e.g. ENOENT when npm is missing, or the timeout firing.
+// Without this, spawnSync returns { status: null, error: <Error> } and a bare
+// `assert.equal(result.status, 0)` reports a misleading "exited null" instead
+// of the actual reason.
+function runNpm(args, cwd) {
+	const result = spawnSync(NPM, args, {
+		cwd,
+		encoding: 'utf8',
+		timeout: 5 * 60 * 1000
+	});
+	assert.equal(
+		result.error,
+		undefined,
+		`\`npm ${args.join(' ')}\` could not be spawned or timed out and never ran: ${result.error}`
+	);
+	return result;
+}
+
 const RUNTIME_DEPS = [
 	'better-sqlite3',
 	'drizzle-orm',
@@ -161,11 +184,7 @@ describe('npm install / build / check with the new dependencies, in an isolated 
 	});
 
 	test('npm install succeeds, including native compilation of better-sqlite3', () => {
-		const result = spawnSync('npm', ['install', '--no-audit', '--no-fund'], {
-			cwd: workDir,
-			encoding: 'utf8',
-			timeout: 5 * 60 * 1000
-		});
+		const result = runNpm(['install', '--no-audit', '--no-fund'], workDir);
 
 		assert.equal(result.status, 0, `npm install failed:\n${result.stdout}\n${result.stderr}`);
 
@@ -204,6 +223,11 @@ describe('npm install / build / check with the new dependencies, in an isolated 
 		);
 
 		assert.equal(
+			result.error,
+			undefined,
+			`the better-sqlite3 smoke test could not be spawned or timed out and never ran: ${result.error}`
+		);
+		assert.equal(
 			result.status,
 			0,
 			`better-sqlite3 smoke test failed:\n${result.stdout}\n${result.stderr}`
@@ -212,21 +236,13 @@ describe('npm install / build / check with the new dependencies, in an isolated 
 	});
 
 	test('npm run build still succeeds with the new dependencies installed', () => {
-		const result = spawnSync('npm', ['run', 'build'], {
-			cwd: workDir,
-			encoding: 'utf8',
-			timeout: 5 * 60 * 1000
-		});
+		const result = runNpm(['run', 'build'], workDir);
 
 		assert.equal(result.status, 0, `npm run build failed:\n${result.stdout}\n${result.stderr}`);
 	});
 
 	test('npm run check still succeeds with the new dependencies installed', () => {
-		const result = spawnSync('npm', ['run', 'check'], {
-			cwd: workDir,
-			encoding: 'utf8',
-			timeout: 5 * 60 * 1000
-		});
+		const result = runNpm(['run', 'check'], workDir);
 
 		assert.equal(result.status, 0, `npm run check failed:\n${result.stdout}\n${result.stderr}`);
 	});
