@@ -10,9 +10,9 @@
 // The .gitignore checks run against an isolated throwaway git repository
 // (a temp dir with its own `git init` and a copy of the real .gitignore),
 // so this suite never touches the real repo's working tree or index and
-// can't race with other test files under `node --test tests/`.
+// can't race with other test files under `node --test`.
 //
-// Run with: node --test tests/
+// Run with: npm test
 'use strict';
 
 const { test, describe, before, after } = require('node:test');

@@ -4,50 +4,25 @@
 // marked, syntax highlighting for code blocks, and an HTML sanitizer),
 // split coherently between dependencies/devDependencies, with a
 // package-lock.json kept in sync, and the whole thing must still install
-// (including native compilation of better-sqlite3), build and typecheck
-// on Node 20.17. The task explicitly forbids adding application code: this
-// is an install-only task.
+// (including native compilation of better-sqlite3), build and typecheck on
+// the pinned Node (22.23.1, see .nvmrc; engines require >=20.19). The task
+// explicitly forbids adding application code: this is an install-only task.
 //
-// The dynamic checks (install/build/check/native module) operate on an
-// isolated copy of the project rather than the repo root, mirroring
-// tests/adapter-node.test.cjs, so this suite doesn't race with the other
-// test files that also run `npm install` / `npm run build` concurrently
-// under `node --test tests/`.
+// The dynamic checks (install/build/check/native module) reuse the shared
+// install/build/check fixture from tests/helpers.cjs, so the heavy install
+// (native better-sqlite3 compile included) and build happen once for the
+// whole `npm test` run instead of once per suite.
 //
-// Run with: node --test tests/
+// Run with: npm test
 'use strict';
 
-const { test, describe, before, after } = require('node:test');
+const { test, describe, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const ROOT = path.resolve(__dirname, '..');
-
-// npm ships as npm.cmd on Windows; spawnSync does not resolve it without a
-// shell, so pick the right executable name per platform for portability.
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-
-// Run an npm command and fail loudly (with the real cause) if it could not be
-// spawned at all — e.g. ENOENT when npm is missing, or the timeout firing.
-// Without this, spawnSync returns { status: null, error: <Error> } and a bare
-// `assert.equal(result.status, 0)` reports a misleading "exited null" instead
-// of the actual reason.
-function runNpm(args, cwd) {
-	const result = spawnSync(NPM, args, {
-		cwd,
-		encoding: 'utf8',
-		timeout: 5 * 60 * 1000
-	});
-	assert.equal(
-		result.error,
-		undefined,
-		`\`npm ${args.join(' ')}\` could not be spawned or timed out and never ran: ${result.error}`
-	);
-	return result;
-}
+const { ROOT, useSharedFixture } = require('./helpers.cjs');
 
 const RUNTIME_DEPS = [
 	'better-sqlite3',
@@ -68,10 +43,6 @@ function readJson(relPath) {
 
 function readText(relPath) {
 	return fs.readFileSync(path.join(ROOT, relPath), 'utf8');
-}
-
-function exists(relPath) {
-	return fs.existsSync(path.join(ROOT, relPath));
 }
 
 test('every requested runtime library is a dependency (not devDependency)', () => {
@@ -149,56 +120,27 @@ test('the ROADMAP checks off task 1.3 (application dependencies)', () => {
 	assert.match(line, /^- \[x\]/i, 'task 1.3 must be checked off');
 });
 
-describe('npm install / build / check with the new dependencies, in an isolated copy of the project', () => {
-	// Isolated in its own temp directory so this suite doesn't race with the
-	// other test files, which also run `npm install` / `npm run build`
-	// directly and would otherwise corrupt this suite's
-	// node_modules/.svelte-kit/build output when run concurrently under
-	// `node --test`.
-	let workDir;
+describe('the new dependencies install, compile and run in the shared install/build fixture', () => {
+	let fixture;
 
 	before(() => {
-		workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'distil-app-deps-'));
-
-		const entriesToCopy = [
-			'package.json',
-			'package-lock.json',
-			'tsconfig.json',
-			'vite.config.ts',
-			'svelte.config.js',
-			'.npmrc',
-			'.nvmrc',
-			'src',
-			'static'
-		].filter(exists);
-
-		for (const entry of entriesToCopy) {
-			fs.cpSync(path.join(ROOT, entry), path.join(workDir, entry), { recursive: true });
-		}
+		fixture = useSharedFixture();
 	});
 
-	after(() => {
-		if (workDir) {
-			fs.rmSync(workDir, { recursive: true, force: true });
-		}
-	});
-
-	test('npm install succeeds, including native compilation of better-sqlite3', () => {
-		const result = runNpm(['install', '--no-audit', '--no-fund'], workDir);
-
-		assert.equal(result.status, 0, `npm install failed:\n${result.stdout}\n${result.stderr}`);
-
+	test('every new dependency is present after install', () => {
 		for (const name of [...RUNTIME_DEPS, ...DEV_DEPS]) {
 			assert.ok(
-				fs.existsSync(path.join(workDir, 'node_modules', name)),
+				fs.existsSync(path.join(fixture.dir, 'node_modules', name)),
 				`node_modules/${name} should exist after npm install`
 			);
 		}
+	});
 
+	test('better-sqlite3 has a compiled native binary for this Node ABI', () => {
 		// better-sqlite3 ships a native addon that must be compiled/downloaded
-		// for the current Node ABI (Node 20.17 here); its presence is the
-		// concrete signal that native compilation actually succeeded.
-		const buildReleaseDir = path.join(workDir, 'node_modules/better-sqlite3/build/Release');
+		// for the current Node ABI; a compiled .node binary under build/Release
+		// is the concrete signal that native compilation actually succeeded.
+		const buildReleaseDir = path.join(fixture.dir, 'node_modules/better-sqlite3/build/Release');
 		assert.ok(
 			fs.existsSync(buildReleaseDir) &&
 				fs.readdirSync(buildReleaseDir).some((f) => f.endsWith('.node')),
@@ -219,7 +161,7 @@ describe('npm install / build / check with the new dependencies, in an isolated 
 					"if (row.v !== 'ok') { throw new Error('unexpected row: ' + JSON.stringify(row)); } " +
 					"console.log('better-sqlite3-ok');"
 			],
-			{ cwd: workDir, encoding: 'utf8', timeout: 30 * 1000 }
+			{ cwd: fixture.dir, encoding: 'utf8', timeout: 30 * 1000 }
 		);
 
 		assert.equal(
@@ -233,17 +175,5 @@ describe('npm install / build / check with the new dependencies, in an isolated 
 			`better-sqlite3 smoke test failed:\n${result.stdout}\n${result.stderr}`
 		);
 		assert.match(result.stdout, /better-sqlite3-ok/);
-	});
-
-	test('npm run build still succeeds with the new dependencies installed', () => {
-		const result = runNpm(['run', 'build'], workDir);
-
-		assert.equal(result.status, 0, `npm run build failed:\n${result.stdout}\n${result.stderr}`);
-	});
-
-	test('npm run check still succeeds with the new dependencies installed', () => {
-		const result = runNpm(['run', 'check'], workDir);
-
-		assert.equal(result.status, 0, `npm run check failed:\n${result.stdout}\n${result.stderr}`);
 	});
 });

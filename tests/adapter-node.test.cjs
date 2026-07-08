@@ -4,62 +4,22 @@
 // in build/ (entry point build/index.js) that can be launched with
 // `node build`, and the README must document how to run it.
 //
-// The dynamic checks (install/build/check/run) operate on an isolated copy
-// of the project rather than the repo root: `node --test tests/` runs test
-// files concurrently, and several suites each run `npm install` /
-// `npm run build`, which would race on a shared node_modules/.svelte-kit/build
-// if they all worked out of the repo root.
+// The dynamic checks (build output, running server) operate on the shared
+// install/build fixture from tests/helpers.cjs rather than the repo root, so
+// this suite neither mutates nor races the shared root and the expensive
+// install/build happens once for the whole `npm test` run.
 //
-// Run with: node --test tests/
+// Run with: npm test
 'use strict';
 
-const { test, describe, before, after } = require('node:test');
+const { test, describe, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const net = require('node:net');
-const { spawnSync, spawn } = require('node:child_process');
+const { spawn } = require('node:child_process');
 
-const ROOT = path.resolve(__dirname, '..');
-
-// npm ships as npm.cmd on Windows; spawnSync does not resolve it without a
-// shell, so pick the right executable name per platform for portability.
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-
-// Run an npm command and fail loudly (with the real cause) if it could not be
-// spawned at all — e.g. ENOENT when npm is missing, or the timeout firing.
-// Without this, spawnSync returns { status: null, error: <Error> } and a bare
-// `assert.equal(result.status, 0)` reports a misleading "exited null" instead
-// of the actual reason.
-function runNpm(args, cwd) {
-	const result = spawnSync(NPM, args, {
-		cwd,
-		encoding: 'utf8',
-		timeout: 5 * 60 * 1000
-	});
-	assert.equal(
-		result.error,
-		undefined,
-		`\`npm ${args.join(' ')}\` could not be spawned or timed out and never ran: ${result.error}`
-	);
-	return result;
-}
-
-// Reserve a free TCP port on the loopback interface and return it, so the
-// spawned server binds to an OS-allocated ephemeral port instead of a
-// hardcoded one that could already be in use under concurrent test runs.
-function getFreePort() {
-	return new Promise((resolve, reject) => {
-		const srv = net.createServer();
-		srv.once('error', reject);
-		srv.listen(0, '127.0.0.1', () => {
-			const { port } = srv.address();
-			srv.close((err) => (err ? reject(err) : resolve(port)));
-		});
-	});
-}
+const { ROOT, getFreePort, useSharedFixture } = require('./helpers.cjs');
 
 function readJson(relPath) {
 	return JSON.parse(fs.readFileSync(path.join(ROOT, relPath), 'utf8'));
@@ -106,10 +66,10 @@ test('package-lock.json is in sync (no adapter-auto, adapter-node present)', () 
 });
 
 test('the project config imports adapter-node, not adapter-auto', () => {
-	// The project wires its SvelteKit adapter either from svelte.config.js
-	// (the standard location) or, as this project does since task 1.1, from
-	// the sveltekit() plugin options in vite.config.ts. Whichever file
-	// defines the adapter must use adapter-node.
+	// Since task 1.1 the SvelteKit adapter is wired from svelte.config.js (the
+	// standard location); vite.config.ts is a bare sveltekit() call. Whichever
+	// file defines the adapter must use adapter-node, so check every config
+	// that references an adapter at all.
 	const candidates = ['svelte.config.js', 'vite.config.ts'].filter(exists);
 	assert.ok(candidates.length > 0, 'expected a svelte.config.js or vite.config.ts defining the adapter');
 
@@ -157,78 +117,36 @@ test('the README documents how to run the production Node server', () => {
 	);
 });
 
-describe('npm install / build / check / run, in an isolated copy of the project', () => {
-	// Isolated in its own temp directory (rather than run against ROOT) so
-	// this suite doesn't race with the other test files, which also run
-	// `npm install` / `npm run build`; sharing the repo root's
-	// node_modules/.svelte-kit/build across suites running concurrently under
-	// `node --test` would otherwise corrupt this suite's output.
-	let workDir;
+describe('the built standalone Node server (shared install/build fixture)', () => {
+	let fixture;
 
 	before(() => {
-		workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'distil-adapter-node-'));
-
-		const entriesToCopy = [
-			'package.json',
-			'package-lock.json',
-			'tsconfig.json',
-			'vite.config.ts',
-			'svelte.config.js',
-			'.npmrc',
-			'.nvmrc',
-			'src',
-			'static'
-		].filter(exists);
-
-		for (const entry of entriesToCopy) {
-			fs.cpSync(path.join(ROOT, entry), path.join(workDir, entry), { recursive: true });
-		}
+		fixture = useSharedFixture();
 	});
 
-	after(() => {
-		if (workDir) {
-			fs.rmSync(workDir, { recursive: true, force: true });
-		}
-	});
-
-	test('npm install succeeds against the committed package-lock.json', () => {
-		const result = runNpm(['install', '--no-audit', '--no-fund'], workDir);
-
-		assert.equal(result.status, 0, `npm install failed:\n${result.stdout}\n${result.stderr}`);
-	});
-
-	test('npm run build produces a standalone Node server entry point', () => {
-		const result = runNpm(['run', 'build'], workDir);
-
-		assert.equal(result.status, 0, `npm run build failed:\n${result.stdout}\n${result.stderr}`);
+	test('npm run build produced a standalone Node server entry point', () => {
 		assert.match(
-			result.stdout,
+			fixture.buildStdout,
 			/adapter-node/i,
 			'build output should confirm adapter-node was used'
 		);
 		assert.ok(
-			fs.existsSync(path.join(workDir, 'build/index.js')),
+			fs.existsSync(path.join(fixture.dir, 'build/index.js')),
 			'build/index.js entry point must exist after build'
 		);
 	});
 
-	test('npm run check still succeeds after switching adapters', () => {
-		const result = runNpm(['run', 'check'], workDir);
-
-		assert.equal(result.status, 0, `npm run check failed:\n${result.stdout}\n${result.stderr}`);
-	});
-
 	test('`node build` starts a standalone server that responds to HTTP requests', async () => {
 		assert.ok(
-			fs.existsSync(path.join(workDir, 'build/index.js')),
-			'build/ must exist (built by a previous test in this suite)'
+			fs.existsSync(path.join(fixture.dir, 'build/index.js')),
+			'build/ must exist (produced by the shared fixture)'
 		);
 
 		// Bind to an OS-allocated ephemeral port rather than a fixed one, so
 		// concurrent test runs (or a leftover process) can't collide on it.
 		const port = await getFreePort();
 		const child = spawn('node', ['build'], {
-			cwd: workDir,
+			cwd: fixture.dir,
 			env: { ...process.env, PORT: String(port), HOST: '127.0.0.1' },
 			stdio: ['ignore', 'pipe', 'pipe']
 		});
@@ -238,17 +156,41 @@ describe('npm install / build / check / run, in an isolated copy of the project'
 			stderr += chunk.toString();
 		});
 
+		// A spawn failure emits 'error' and an early crash emits 'exit' on the
+		// child; without listeners the former is an uncaught exception that
+		// crashes the test process, and the latter would go unnoticed until the
+		// full retry window expires. Record both so the probe fails fast with the
+		// real cause.
+		let spawnError = null;
+		let earlyExit = null;
+		child.on('error', (err) => {
+			spawnError = err;
+		});
+		child.on('exit', (code, signal) => {
+			if (earlyExit === null) {
+				earlyExit = { code, signal };
+			}
+		});
+
 		try {
 			const statusCode = await new Promise((resolve, reject) => {
 				const start = Date.now();
 				const retryOrFail = (cause) => {
-					if (Date.now() - start > 15000) {
+					if (spawnError) {
+						reject(new Error(`server process failed to start: ${spawnError.message}. stderr:\n${stderr}`));
+					} else if (earlyExit) {
+						reject(new Error(`server exited early (code ${earlyExit.code}, signal ${earlyExit.signal}). stderr:\n${stderr}`));
+					} else if (Date.now() - start > 15000) {
 						reject(new Error(`server never became reachable on port ${port}: ${cause}. stderr:\n${stderr}`));
 					} else {
 						setTimeout(tryConnect, 250);
 					}
 				};
 				const tryConnect = () => {
+					if (spawnError || earlyExit) {
+						retryOrFail('child process is not running');
+						return;
+					}
 					const req = http.get({ host: '127.0.0.1', port, path: '/', timeout: 1000 }, (res) => {
 						res.resume();
 						resolve(res.statusCode);
@@ -268,7 +210,15 @@ describe('npm install / build / check / run, in an isolated copy of the project'
 
 			assert.equal(statusCode, 200, 'the standalone server should respond 200 on /');
 		} finally {
-			child.kill();
+			// child.kill() only sends SIGTERM; wait for the process to actually
+			// exit so it can't keep holding the port/files after the test and no
+			// orphan is left behind if SIGTERM is slow.
+			if (child.exitCode === null && child.signalCode === null) {
+				await new Promise((resolve) => {
+					child.once('exit', () => resolve());
+					child.kill();
+				});
+			}
 		}
 	});
 });

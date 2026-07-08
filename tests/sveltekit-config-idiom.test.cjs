@@ -9,28 +9,27 @@
 // still select @sveltejs/adapter-node and produce a standalone Node server
 // in build/, and `npm run check` must still pass with 0 errors.
 //
-// The dynamic checks (install/build/check) operate on an isolated copy of
-// the project rather than the repo root, mirroring
-// tests/adapter-node.test.cjs, so this suite doesn't race with the other
-// test files that also run `npm install` / `npm run build` concurrently
-// under `node --test tests/`.
+// The dynamic checks reuse the shared install/build/check fixture from
+// tests/helpers.cjs (so the heavy install/build happens once for the whole
+// `npm test` run); the runes-enforcement check runs in its own writable copy
+// that reuses the fixture's node_modules, so it never corrupts the shared
+// fixture that other suites read concurrently.
 //
-// Run with: node --test tests/
+// Run with: npm test
 'use strict';
 
-const { test, describe, before, after } = require('node:test');
+const { test, describe, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 
-const ROOT = path.resolve(__dirname, '..');
-
-// npm ships as npm.cmd on Windows; spawnSync does not resolve it without a
-// shell, so pick the right executable name per platform for portability.
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const {
+	ROOT,
+	runNpm,
+	useSharedFixture,
+	makeMutableCopyWithSharedModules
+} = require('./helpers.cjs');
 
 function readText(relPath) {
 	return fs.readFileSync(path.join(ROOT, relPath), 'utf8');
@@ -38,25 +37,6 @@ function readText(relPath) {
 
 function exists(relPath) {
 	return fs.existsSync(path.join(ROOT, relPath));
-}
-
-// Run an npm command and fail loudly (with the real cause) if it could not be
-// spawned at all — e.g. ENOENT when npm is missing, or the timeout firing.
-// Without this, spawnSync returns { status: null, error: <Error> } and a bare
-// `assert.equal(result.status, 0)` reports a misleading "exited null" instead
-// of the actual reason.
-function runNpm(args, cwd) {
-	const result = spawnSync(NPM, args, {
-		cwd,
-		encoding: 'utf8',
-		timeout: 5 * 60 * 1000
-	});
-	assert.equal(
-		result.error,
-		undefined,
-		`\`npm ${args.join(' ')}\` could not be spawned or timed out and never ran: ${result.error}`
-	);
-	return result;
 }
 
 test('svelte.config.js exists at the repo root', () => {
@@ -126,60 +106,23 @@ test('the BACKLOG.md item sveltekit-config-idiom is checked off', () => {
 	assert.match(line, /^- \[x\]/i, 'sveltekit-config-idiom must be checked off');
 });
 
-describe('npm run build / check still work from the conventional svelte.config.js, in an isolated copy', () => {
-	let workDir;
+describe('the conventional svelte.config.js still drives build and runes enforcement', () => {
+	let fixture;
 
 	before(() => {
-		workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'distil-sveltekit-config-idiom-'));
-
-		const entriesToCopy = [
-			'package.json',
-			'package-lock.json',
-			'tsconfig.json',
-			'vite.config.ts',
-			'svelte.config.js',
-			'.npmrc',
-			'.nvmrc',
-			'src',
-			'static'
-		].filter(exists);
-
-		for (const entry of entriesToCopy) {
-			fs.cpSync(path.join(ROOT, entry), path.join(workDir, entry), { recursive: true });
-		}
-	});
-
-	after(() => {
-		if (workDir) {
-			fs.rmSync(workDir, { recursive: true, force: true });
-		}
-	});
-
-	test('npm install succeeds against the committed package-lock.json', () => {
-		const result = runNpm(['install', '--no-audit', '--no-fund'], workDir);
-
-		assert.equal(result.status, 0, `npm install failed:\n${result.stdout}\n${result.stderr}`);
+		fixture = useSharedFixture();
 	});
 
 	test('npm run build still selects adapter-node and produces a standalone server entry point', () => {
-		const result = runNpm(['run', 'build'], workDir);
-
-		assert.equal(result.status, 0, `npm run build failed:\n${result.stdout}\n${result.stderr}`);
 		assert.match(
-			result.stdout,
+			fixture.buildStdout,
 			/Using @sveltejs\/adapter-node/,
 			'build output should confirm adapter-node was selected via svelte.config.js'
 		);
 		assert.ok(
-			fs.existsSync(path.join(workDir, 'build/index.js')),
+			fs.existsSync(path.join(fixture.dir, 'build/index.js')),
 			'build/index.js entry point must exist after build'
 		);
-	});
-
-	test('npm run check still passes with 0 errors', () => {
-		const result = runNpm(['run', 'check'], workDir);
-
-		assert.equal(result.status, 0, `npm run check failed:\n${result.stdout}\n${result.stderr}`);
 	});
 
 	test('runes mode is still enforced end-to-end: legacy `export let` props fail svelte-check', () => {
@@ -188,33 +131,42 @@ describe('npm run build / check still work from the conventional svelte.config.j
 		// for project files (as opposed to merely present, unused, in
 		// svelte.config.js). Proves the runes behavior survived the move out
 		// of vite.config.ts, through the real `npm run check` entry point.
-		const legacyDir = path.join(workDir, 'src/lib');
-		fs.mkdirSync(legacyDir, { recursive: true });
-		fs.writeFileSync(
-			path.join(legacyDir, 'LegacyProps.svelte'),
-			'<script>\n\texport let label;\n</script>\n\n<span>{label}</span>\n'
-		);
-		fs.writeFileSync(
-			path.join(legacyDir, 'LegacyPropsHost.svelte'),
-			"<script>\n\timport LegacyProps from './LegacyProps.svelte';\n</script>\n\n<LegacyProps label=\"hi\" />\n"
-		);
+		//
+		// Runs in its own writable copy (reusing the shared fixture's installed
+		// node_modules) so mutating src/ and re-running check can't corrupt the
+		// shared fixture that other suites read concurrently.
+		const workDir = makeMutableCopyWithSharedModules();
+		try {
+			const legacyDir = path.join(workDir, 'src/lib');
+			fs.mkdirSync(legacyDir, { recursive: true });
+			fs.writeFileSync(
+				path.join(legacyDir, 'LegacyProps.svelte'),
+				'<script>\n\texport let label;\n</script>\n\n<span>{label}</span>\n'
+			);
+			fs.writeFileSync(
+				path.join(legacyDir, 'LegacyPropsHost.svelte'),
+				"<script>\n\timport LegacyProps from './LegacyProps.svelte';\n</script>\n\n<LegacyProps label=\"hi\" />\n"
+			);
 
-		const result = runNpm(['run', 'check'], workDir);
+			const result = runNpm(['run', 'check'], workDir);
 
-		assert.notEqual(
-			result.status,
-			0,
-			`expected npm run check to fail on legacy (non-runes) prop syntax, but it passed:\n${result.stdout}\n${result.stderr}`
-		);
-		assert.match(
-			result.stdout + result.stderr,
-			/LegacyProps\.svelte/,
-			'svelte-check output must point at the legacy component, proving it actually analyzed it'
-		);
-		assert.match(
-			result.stdout + result.stderr,
-			/export let.*runes mode|legacy_export_invalid/i,
-			'svelte-check output must report the runes-mode rejection of `export let`, not an unrelated failure'
-		);
+			assert.notEqual(
+				result.status,
+				0,
+				`expected npm run check to fail on legacy (non-runes) prop syntax, but it passed:\n${result.stdout}\n${result.stderr}`
+			);
+			assert.match(
+				result.stdout + result.stderr,
+				/LegacyProps\.svelte/,
+				'svelte-check output must point at the legacy component, proving it actually analyzed it'
+			);
+			assert.match(
+				result.stdout + result.stderr,
+				/export let.*runes mode|legacy_export_invalid/i,
+				'svelte-check output must report the runes-mode rejection of `export let`, not an unrelated failure'
+			);
+		} finally {
+			fs.rmSync(workDir, { recursive: true, force: true });
+		}
 	});
 });

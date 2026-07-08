@@ -4,45 +4,19 @@
 //
 // The static checks (files present at the repo root, ROADMAP checkbox, etc.)
 // run against ROOT, since they assert the scaffold was created in place. The
-// dynamic checks (install/build) operate on an isolated copy of the project
-// instead, mirroring the other test files, so this suite never mutates the
-// shared repo root and can't race with the other suites that also run
-// `npm install` / `npm run build` concurrently under `node --test`.
+// dynamic install/build check reuses the shared install/build fixture from
+// tests/helpers.cjs, so this suite never mutates the shared repo root and the
+// heavy install/build happens once for the whole `npm test` run.
 //
-// Run with: node --test tests/
+// Run with: npm test
 'use strict';
 
-const { test, describe, before, after } = require('node:test');
+const { test, describe, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 
-const ROOT = path.resolve(__dirname, '..');
-
-// npm ships as npm.cmd on Windows; spawnSync does not resolve it without a
-// shell, so pick the right executable name per platform for portability.
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-
-// Run an npm command and fail loudly (with the real cause) if it could not be
-// spawned at all — e.g. ENOENT when npm is missing, or the timeout firing.
-// Without this, spawnSync returns { status: null, error: <Error> } and a bare
-// `assert.equal(result.status, 0)` reports a misleading "exited null" instead
-// of the actual reason.
-function runNpm(args, cwd) {
-	const result = spawnSync(NPM, args, {
-		cwd,
-		encoding: 'utf8',
-		timeout: 5 * 60 * 1000
-	});
-	assert.equal(
-		result.error,
-		undefined,
-		`\`npm ${args.join(' ')}\` could not be spawned or timed out and never ran: ${result.error}`
-	);
-	return result;
-}
+const { ROOT, useSharedFixture } = require('./helpers.cjs');
 
 function readJson(relPath) {
 	return JSON.parse(fs.readFileSync(path.join(ROOT, relPath), 'utf8'));
@@ -63,6 +37,10 @@ test('scaffold files live at the repo root, not in a subfolder', () => {
 	]) {
 		assert.ok(exists(relPath), `expected ${relPath} at repo root`);
 	}
+});
+
+test('a committed package-lock.json exists for reproducible installs', () => {
+	assert.ok(exists('package-lock.json'), 'package-lock.json must be committed');
 });
 
 test('pre-existing files were preserved, not deleted or overwritten', () => {
@@ -141,66 +119,24 @@ test('the template is minimal: no demo app, no optional tooling bundled in', () 
 	assert.doesNotMatch(pageSource, /counter/i, 'skeleton template page should not include demo widgets');
 });
 
-describe('the skeleton installs and builds, in an isolated copy of the project', () => {
-	// Isolated in its own temp directory (rather than run against ROOT) so this
-	// suite doesn't mutate the shared repo root and can't race with the other
-	// test files, which also run `npm install` / `npm run build` concurrently
-	// under `node --test`.
-	let workDir;
+describe('the skeleton installs and builds (shared install/build fixture)', () => {
+	let fixture;
 
 	before(() => {
-		assert.ok(exists('package-lock.json'), 'package-lock.json must be committed');
-
-		workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'distil-sveltekit-scaffold-'));
-
-		const entriesToCopy = [
-			'package.json',
-			'package-lock.json',
-			'tsconfig.json',
-			'vite.config.ts',
-			'svelte.config.js',
-			'.npmrc',
-			'.nvmrc',
-			'src',
-			'static'
-		].filter(exists);
-
-		for (const entry of entriesToCopy) {
-			fs.cpSync(path.join(ROOT, entry), path.join(workDir, entry), { recursive: true });
-		}
+		fixture = useSharedFixture();
 	});
 
-	after(() => {
-		if (workDir) {
-			fs.rmSync(workDir, { recursive: true, force: true });
-		}
-	});
-
-	test('npm install succeeds against the committed package-lock.json', () => {
-		const result = runNpm(['install', '--no-audit', '--no-fund'], workDir);
-
-		assert.equal(
-			result.status,
-			0,
-			`npm install failed:\n${result.stdout}\n${result.stderr}`
-		);
+	test('npm install produced @sveltejs/kit', () => {
 		assert.ok(
-			fs.existsSync(path.join(workDir, 'node_modules/@sveltejs/kit')),
+			fs.existsSync(path.join(fixture.dir, 'node_modules/@sveltejs/kit')),
 			'@sveltejs/kit should be installed'
 		);
 	});
 
-	test('npm run build succeeds on the skeleton', () => {
-		const result = runNpm(['run', 'build'], workDir);
-
-		assert.equal(
-			result.status,
-			0,
-			`npm run build failed:\n${result.stdout}\n${result.stderr}`
-		);
+	test('npm run build produced output artifacts', () => {
 		assert.ok(
-			fs.existsSync(path.join(workDir, '.svelte-kit/output')) ||
-				fs.existsSync(path.join(workDir, 'build')),
+			fs.existsSync(path.join(fixture.dir, '.svelte-kit/output')) ||
+				fs.existsSync(path.join(fixture.dir, 'build')),
 			'build should produce output artifacts'
 		);
 	});
