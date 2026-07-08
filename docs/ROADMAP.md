@@ -3,7 +3,7 @@
 Tâches à réaliser dans l'ordre. Cocher `[x]` une tâche une fois terminée et vérifiée.
 
 ## 1. Fondations du projet
-- [ ] Initialiser un projet SvelteKit (TypeScript, template minimal) à la racine du dépôt.
+- [x] Initialiser un projet SvelteKit (TypeScript, template minimal) à la racine du dépôt.
 - [ ] Installer et configurer `adapter-node` pour un hébergement Node autonome.
 - [ ] Ajouter les dépendances : `better-sqlite3`, `drizzle-orm`, `drizzle-kit`, `simple-git`, `gray-matter`, `marked`, coloration syntaxique du code, et un sanitizer HTML.
 - [ ] Configurer `.gitignore` pour exclure le dossier de données locales (base SQLite, cache des dépôts KB) et le fichier d'environnement.
