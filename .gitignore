@@ -12,5 +12,6 @@ node_modules/
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# App data (SQLite db + KB git cache)
+# Données locales de l'app : base SQLite (ex. data/distil.db)
+# et cache des dépôts KB clonés (ex. data/kb-cache/).
 /data/

@@ -6,7 +6,7 @@ Tâches à réaliser dans l'ordre. Cocher `[x]` une tâche une fois terminée et
 - [x] **1.1** Initialiser un projet SvelteKit (TypeScript, template minimal) à la racine du dépôt.
 - [x] **1.2** Installer et configurer `adapter-node` pour un hébergement Node autonome.
 - [x] **1.3** Ajouter les dépendances : `better-sqlite3`, `drizzle-orm`, `drizzle-kit`, `simple-git`, `gray-matter`, `marked`, coloration syntaxique du code, et un sanitizer HTML.
-- [ ] **1.4** Configurer `.gitignore` pour exclure le dossier de données locales (base SQLite, cache des dépôts KB) et le fichier d'environnement.
+- [x] **1.4** Configurer `.gitignore` pour exclure le dossier de données locales (base SQLite, cache des dépôts KB) et le fichier d'environnement.
 - [ ] **1.5** Définir les variables d'environnement nécessaires (mot de passe de l'app, secret de session, chemin de la base) et documenter leur usage.
 
 ## 2. Base de données
