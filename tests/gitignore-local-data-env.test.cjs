@@ -12,6 +12,7 @@
 // so this suite never touches the real repo's working tree or index and
 // can't race with other test files under `node --test`.
 //
+// File: tests/gitignore-local-data-env.test.cjs
 // Run with: npm test
 'use strict';
 
@@ -29,7 +30,10 @@ function readText(relPath) {
 }
 
 function git(args, cwd) {
-	const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+	// A timeout is essential here: without it a stalled git (e.g. blocking on a
+	// credential or hook prompt in a misconfigured environment) would hang
+	// `npm test` forever instead of failing with a cause.
+	const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 60 * 1000 });
 	// A missing git binary (or a spawn timeout) surfaces as result.error with a
 	// null status; assert on it so callers see the real cause instead of
 	// misreading an "exited null" as a legitimate git exit code.

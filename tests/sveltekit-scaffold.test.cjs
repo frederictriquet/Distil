@@ -8,6 +8,7 @@
 // tests/helpers.cjs, so this suite never mutates the shared repo root and the
 // heavy install/build happens once for the whole `npm test` run.
 //
+// File: tests/sveltekit-scaffold.test.cjs
 // Run with: npm test
 'use strict';
 

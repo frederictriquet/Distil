@@ -13,6 +13,7 @@
 // (native better-sqlite3 compile included) and build happen once for the
 // whole `npm test` run instead of once per suite.
 //
+// File: tests/app-dependencies.test.cjs
 // Run with: npm test
 'use strict';
 

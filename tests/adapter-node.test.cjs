@@ -9,6 +9,7 @@
 // this suite neither mutates nor races the shared root and the expensive
 // install/build happens once for the whole `npm test` run.
 //
+// File: tests/adapter-node.test.cjs
 // Run with: npm test
 'use strict';
 

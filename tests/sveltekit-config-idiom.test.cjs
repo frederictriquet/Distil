@@ -15,6 +15,7 @@
 // that reuses the fixture's node_modules, so it never corrupts the shared
 // fixture that other suites read concurrently.
 //
+// File: tests/sveltekit-config-idiom.test.cjs
 // Run with: npm test
 'use strict';
 
