@@ -1,42 +1,33 @@
-# sv
+# Distil
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Application web personnelle pour consulter, organiser et étudier des bases de connaissances Markdown synchronisées depuis des dépôts git (voir [docs/ROADMAP.md](docs/ROADMAP.md)).
 
-## Creating a project
+Squelette SvelteKit (TypeScript, template minimal), généré avec [`sv`](https://github.com/sveltejs/cli).
 
-If you're seeing this, you've probably already done this step. Congrats!
+## Développement
 
-```sh
-# create a new project
-npx sv create my-app
-```
-
-To recreate this project with the same configuration:
+Node `^18.0.0 || ^20.0.0 || >=22.0.0` est requis (voir `.nvmrc`).
 
 ```sh
-# recreate this project
-npx sv@0.16.2 create --template minimal --types ts --no-install .
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
+npm install
 npm run dev
 
-# or start the server and open the app in a new browser tab
+# ou pour ouvrir directement un onglet du navigateur
 npm run dev -- --open
 ```
 
-## Building
-
-To create a production version of your app:
+## Build
 
 ```sh
 npm run build
 ```
 
-You can preview the production build with `npm run preview`.
+L'aperçu de la version de production se fait avec `npm run preview`.
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+> Pour déployer l'application, un [adapter](https://svelte.dev/docs/kit/adapters) adapté à la cible sera nécessaire (voir la section « Fondations du projet » de la roadmap).
+
+## Tests
+
+```sh
+npm test
+```
