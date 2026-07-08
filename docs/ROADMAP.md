@@ -7,7 +7,7 @@ Tâches à réaliser dans l'ordre. Cocher `[x]` une tâche une fois terminée et
 - [x] **1.2** Installer et configurer `adapter-node` pour un hébergement Node autonome.
 - [x] **1.3** Ajouter les dépendances : `better-sqlite3`, `drizzle-orm`, `drizzle-kit`, `simple-git`, `gray-matter`, `marked`, coloration syntaxique du code, et un sanitizer HTML.
 - [x] **1.4** Configurer `.gitignore` pour exclure le dossier de données locales (base SQLite, cache des dépôts KB) et le fichier d'environnement.
-- [ ] **1.5** Définir les variables d'environnement nécessaires (mot de passe de l'app, secret de session, chemin de la base) et documenter leur usage.
+- [x] **1.5** Définir les variables d'environnement nécessaires (mot de passe de l'app, secret de session, chemin de la base) et documenter leur usage.
 
 ## 2. Base de données
 - [ ] **2.1** Définir le schéma : bases de connaissances, fiches, préférences par thème, catégories de bookmarks, bookmarks, historique de lecture.
@@ -15,9 +15,9 @@ Tâches à réaliser dans l'ordre. Cocher `[x]` une tâche une fois terminée et
 - [ ] **2.3** Générer et appliquer la première migration ; vérifier la création du fichier de base.
 
 ## 3. Authentification
-- [ ] **3.1** Mettre en place la session mono-utilisateur (cookie signé) et la vérification du mot de passe.
-- [ ] **3.2** Créer la page de connexion.
-- [ ] **3.3** Ajouter la garde d'accès qui redirige toute page non autorisée vers la connexion.
+- [x] **3.1** Mettre en place la session mono-utilisateur (cookie signé) et la vérification du mot de passe.
+- [x] **3.2** Créer la page de connexion.
+- [x] **3.3** Ajouter la garde d'accès qui redirige toute page non autorisée vers la connexion.
 
 ## 4. Gestion des bases de connaissances (KB)
 - [ ] **4.1** Créer la page de gestion des KB (liste avec nom, dernière synchronisation, nombre de fiches actives).

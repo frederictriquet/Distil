@@ -107,13 +107,14 @@ test('the template is minimal: no demo app, no optional tooling bundled in', () 
 	}
 
 	// the "demo" SvelteKit template ships extra routes/components (e.g. a
-	// Sverdle game); the minimal/skeleton template only has the root route.
+	// Sverdle game); the minimal/skeleton template only has the root route,
+	// plus the `login` route added by roadmap task 3.2 (authentication).
 	const routesDir = path.join(ROOT, 'src/routes');
 	const routeEntries = fs.readdirSync(routesDir);
 	assert.deepEqual(
 		routeEntries.sort(),
-		['+layout.svelte', '+page.svelte'],
-		'src/routes should only contain the root layout and page (skeleton template)'
+		['+layout.svelte', '+page.svelte', 'login'],
+		'src/routes should only contain the root layout/page and the login route'
 	);
 
 	const pageSource = fs.readFileSync(path.join(ROOT, 'src/routes/+page.svelte'), 'utf8');

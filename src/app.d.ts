@@ -3,7 +3,10 @@
 declare global {
 	namespace App {
 		// interface Error {}
-		// interface Locals {}
+		interface Locals {
+			// Set by hooks.server.ts: whether the request carries a valid session.
+			authenticated: boolean;
+		}
 		// interface PageData {}
 		// interface PageState {}
 		// interface Platform {}
