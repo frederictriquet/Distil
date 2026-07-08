@@ -19,9 +19,21 @@
 		"@sveltejs/adapter-node": "^5.5.7",
 		"@sveltejs/kit": "^2.63.0",
 		"@sveltejs/vite-plugin-svelte": "^5.1.1",
+		"@types/better-sqlite3": "^7.6.13",
+		"drizzle-kit": "^0.31.10",
 		"svelte": "^5.56.1",
 		"svelte-check": "^4.6.0",
 		"typescript": "^6.0.3",
 		"vite": "^6.4.3"
+	},
+	"dependencies": {
+		"better-sqlite3": "^12.11.1",
+		"drizzle-orm": "^0.45.2",
+		"gray-matter": "^4.0.3",
+		"highlight.js": "^11.11.1",
+		"isomorphic-dompurify": "2.26.0",
+		"marked": "^18.0.5",
+		"marked-highlight": "^2.2.4",
+		"simple-git": "^3.36.0"
 	}
 }
