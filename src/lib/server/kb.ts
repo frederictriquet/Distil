@@ -209,6 +209,24 @@ export function toggleKnowledgeBaseFocus(db: Db, id: number): boolean | undefine
 }
 
 /**
+ * Filesystem error codes we treat as expected best-effort purge failures: a
+ * cache directory still held open by another handle (a locked git working copy
+ * on Windows, an antivirus scan, a lingering child process). These are the
+ * documented failure modes of removing a directory that may be in use.
+ */
+const EXPECTED_PURGE_ERROR_CODES = new Set(['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY']);
+
+/** True when `error` is one of the expected, tolerable fs purge failures. */
+function isExpectedPurgeError(error: unknown): boolean {
+	return (
+		typeof error === 'object' &&
+		error !== null &&
+		'code' in error &&
+		EXPECTED_PURGE_ERROR_CODES.has((error as { code?: unknown }).code as string)
+	);
+}
+
+/**
  * Best-effort removal of a KB's local repo cache directory
  * (`<cacheBaseDir>/<id>/`). Missing directories are ignored so this stays safe
  * before section 5 ever creates one.
@@ -217,12 +235,17 @@ export function toggleKnowledgeBaseFocus(db: Db, id: number): boolean | undefine
  * on Windows, where section 5 will store a git checkout here) still raises
  * `EBUSY`/`EPERM`. Since the DB row is deleted first, we must not let such a
  * purge failure surface as an error for a delete that already succeeded — so we
- * catch it and log a warning instead, honouring the best-effort contract.
+ * catch the documented, expected fs errors and log a warning instead, honouring
+ * the best-effort contract. Any other (truly unexpected) error is re-thrown
+ * rather than silently swallowed.
  */
 export function purgeKnowledgeBaseCache(id: number, cacheBaseDir: string = DEFAULT_KB_CACHE_DIR): void {
 	try {
 		rmSync(join(cacheBaseDir, String(id)), { recursive: true, force: true });
 	} catch (error) {
+		if (!isExpectedPurgeError(error)) {
+			throw error;
+		}
 		console.warn(`Failed to purge local cache for knowledge base ${id}:`, error);
 	}
 }

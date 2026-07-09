@@ -63,3 +63,40 @@ export function closeDb(): void {
 		database = undefined;
 	}
 }
+
+// Guard kept on `globalThis` (not a module-local flag) so it survives a Vite
+// SSR hot-reload, which re-instantiates this module while the previously
+// registered `exit` listener persists on the shared `process` object. Keying
+// off the module instance instead would let a long dev session accumulate one
+// `exit` listener per reload and eventually hit MaxListenersExceededWarning.
+const SHUTDOWN_HOOKS_REGISTERED = Symbol.for('distil.db.shutdownHooksRegistered');
+
+/**
+ * Wire {@link closeDb} to process termination so a graceful shutdown checkpoints
+ * the WAL instead of leaving `-wal`/`-shm` files behind.
+ *
+ * We only register a `process.on('exit')` listener: it fires on any clean exit
+ * and runs synchronously, which suits better-sqlite3's synchronous `close()`.
+ * We deliberately do NOT install our own `SIGINT`/`SIGTERM` handlers. In
+ * production this app runs under `@sveltejs/adapter-node`, which owns graceful
+ * signal handling — it drains in-flight requests before calling `process.exit()`
+ * itself. Closing the connection and forcing an exit from a signal handler here
+ * would race and abort that drain (and, in dev, preempt Vite's own Ctrl+C
+ * cleanup). Letting the process reach a normal `exit` is enough: the `exit`
+ * hook then checkpoints the WAL.
+ *
+ * Registration is idempotent across repeated calls and across hot-reloads, so
+ * exactly one `exit` listener is ever added. {@link closeDb} is itself safe to
+ * call repeatedly regardless.
+ */
+export function registerDbShutdownHooks(): void {
+	const guard = globalThis as Record<symbol, unknown>;
+	if (guard[SHUTDOWN_HOOKS_REGISTERED]) {
+		return;
+	}
+	guard[SHUTDOWN_HOOKS_REGISTERED] = true;
+
+	process.on('exit', () => {
+		closeDb();
+	});
+}

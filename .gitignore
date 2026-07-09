@@ -2,7 +2,10 @@
 .orchestrator/
 
 # Node / SvelteKit
-node_modules/
+# No trailing slash: also ignore a `node_modules` *symlink* (a trailing-slash
+# rule matches directories only, which once let an absolute-path symlink slip
+# past this ignore and get committed).
+node_modules
 /build
 /.svelte-kit
 /package
