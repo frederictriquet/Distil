@@ -1,27 +1,20 @@
-// Access guard (roadmap task 3.3) plus the logout endpoint.
+// Access guard (roadmap task 3.3).
 //
 // Validates the signed session cookie on every request, exposes the result via
 // `event.locals.authenticated`, and redirects any unauthenticated request to
-// /login. The login route is public so it stays reachable while logged out;
-// static/public assets are served by the adapter before this handle runs, so
-// they never need to be whitelisted here.
+// /login. The login and logout routes are public so they stay reachable while
+// logged out; static/public assets are served by the adapter before this
+// handle runs, so they never need to be whitelisted here.
 //
-// Logout is handled here rather than as a `/login` form action: SvelteKit
-// forbids combining a default action (used by the login form) with a named
-// action on the same route, so the logout POST (`/login?/logout`) is
-// intercepted before it reaches the page and answered with a cookie-clearing
-// redirect.
+// When an unauthenticated request targets a protected page, the originally
+// requested path (with its query) is carried to /login via a `redirectTo`
+// query parameter, so the login flow can send the user back where they were
+// headed after signing in.
 
 import { redirect, type Handle } from '@sveltejs/kit';
-import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
-import {
-	SESSION_COOKIE,
-	getSessionIssuedAt,
-	isUsableSecret,
-	serializeClearedSessionCookie
-} from '$lib/server/auth';
-import { isSessionRevoked, revokeSessionsIssuedBefore } from '$lib/server/session-revocation';
+import { SESSION_COOKIE, getSessionIssuedAt, isUsableSecret } from '$lib/server/auth';
+import { isSessionRevoked } from '$lib/server/session-revocation';
 import { registerDbShutdownHooks } from '$lib/server/db';
 
 // Wire the SQLite connection close to process termination once, at server
@@ -30,7 +23,7 @@ import { registerDbShutdownHooks } from '$lib/server/db';
 registerDbShutdownHooks();
 
 /** Routes reachable without a valid session. */
-const PUBLIC_PATHS = ['/login'];
+const PUBLIC_PATHS = ['/login', '/logout'];
 
 function isPublicPath(pathname: string): boolean {
 	return PUBLIC_PATHS.some((base) => pathname === base || pathname.startsWith(`${base}/`));
@@ -49,33 +42,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 			'SESSION_SECRET is too short or a known placeholder; use a long random value ' +
 				'(see .env.example). Sessions are disabled until it is fixed.'
 		);
-	}
-
-	// Logout clears the cookie and sends the user back to the login page. It is
-	// handled here (not as a form action) because SvelteKit forbids a default
-	// action alongside a named one on /login.
-	const isLogoutRequest =
-		event.request.method === 'POST' &&
-		event.url.pathname === '/login' &&
-		event.url.searchParams.has('/logout');
-	if (isLogoutRequest) {
-		// Revoke the presented token server-side before clearing the cookie, so
-		// the stateless token cannot keep authenticating even if it is replayed
-		// after logout. Distil is single-user, so revoking everything issued at
-		// or before this token's issue time invalidates the active session.
-		if (isUsableSecret(secret)) {
-			const iat = getSessionIssuedAt(event.cookies.get(SESSION_COOKIE), secret);
-			if (iat !== null) {
-				revokeSessionsIssuedBefore(iat);
-			}
-		}
-		return new Response(null, {
-			status: 303,
-			headers: {
-				location: '/login',
-				'set-cookie': serializeClearedSessionCookie(!dev)
-			}
-		});
 	}
 
 	// A classic (no-JS) login form POST, and any client that omits `Accept`,
@@ -102,7 +68,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.authenticated = iat !== null && !isSessionRevoked(iat);
 
 	if (!event.locals.authenticated && !isPublicPath(event.url.pathname)) {
-		redirect(303, '/login');
+		// Preserve the originally requested path (including query) so the user is
+		// returned to it after a successful login.
+		const target = event.url.pathname + event.url.search;
+		const location =
+			target === '/' ? '/login' : `/login?redirectTo=${encodeURIComponent(target)}`;
+		redirect(303, location);
 	}
 
 	return resolve(event);

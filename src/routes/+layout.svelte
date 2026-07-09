@@ -81,7 +81,7 @@
 					>
 						{theme === 'dark' ? '☀' : '☾'}
 					</button>
-					<form method="POST" action="/login?/logout">
+					<form method="POST" action="/logout">
 						<button type="submit">Log out</button>
 					</form>
 				</div>

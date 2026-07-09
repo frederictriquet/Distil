@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { form, data }: { form: ActionData; data: PageData } = $props();
 </script>
 
 <svelte:head>
@@ -13,6 +13,7 @@
 	<h1>Log in</h1>
 
 	<form method="POST" use:enhance>
+		<input type="hidden" name="redirectTo" value={data.redirectTo} />
 		<label for="password">Password</label>
 		<input
 			id="password"

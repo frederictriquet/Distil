@@ -1,10 +1,10 @@
 // Login page server logic (roadmap task 3.2).
 //
 // The default action verifies the submitted password against APP_PASSWORD and,
-// on success, sets a signed session cookie and redirects to the app home. Both
-// secrets come from the environment. Logout is not a form action here: because
-// SvelteKit forbids mixing a default action with a named one on the same route,
-// the logout POST (`/login?/logout`) is handled in hooks.server.ts instead.
+// on success, sets a signed session cookie and redirects to the originally
+// requested page (or the app home). Both secrets come from the environment.
+// Logout lives on its own /logout endpoint, so this route keeps a single
+// `default` action and never mixes a default with a named action.
 
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -22,22 +22,28 @@ import {
 	clearLoginAttempts,
 	recordFailedLogin
 } from '$lib/server/rate-limit';
+import { safeRedirectPath } from '$lib/server/redirect';
 
 // Fixed delay applied after a failed password attempt. It does not stop a
 // determined attacker but raises the cost of online guessing against the single
 // static password (constant-time comparison alone does not help there).
 const FAILED_LOGIN_DELAY_MS = 500;
 
-export const load: PageServerLoad = async ({ locals }) => {
-	// Already logged in? Skip the form and go home.
+export const load: PageServerLoad = async ({ locals, url }) => {
+	// Validate the requested post-login target up front so both the "already
+	// authenticated" redirect below and the form's hidden field use the same
+	// sanitized value (defends against an open-redirect via `?redirectTo=`).
+	const redirectTo = safeRedirectPath(url.searchParams.get('redirectTo'));
+
+	// Already logged in? Skip the form and honor the requested target.
 	if (locals.authenticated) {
-		redirect(303, '/');
+		redirect(303, redirectTo);
 	}
-	return {};
+	return { redirectTo };
 };
 
 export const actions: Actions = {
-	default: async ({ request, cookies, getClientAddress, setHeaders }) => {
+	default: async ({ request, cookies, url, getClientAddress, setHeaders }) => {
 		const appPassword = env.APP_PASSWORD;
 		const secret = env.SESSION_SECRET;
 		if (!appPassword || !isUsableSecret(secret)) {
@@ -69,7 +75,14 @@ export const actions: Actions = {
 
 		// Successful login: drop any accumulated failures for this client.
 		clearLoginAttempts(clientKey);
+
+		// Re-validate the target from the submitted form (preferred) or the URL;
+		// never trust the raw value for the redirect.
+		const redirectTo = safeRedirectPath(
+			data.get('redirectTo') ?? url.searchParams.get('redirectTo')
+		);
+
 		cookies.set(SESSION_COOKIE, createSessionToken(secret), sessionCookieOptions(!dev));
-		redirect(303, '/');
+		redirect(303, redirectTo);
 	}
 };

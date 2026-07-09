@@ -4,11 +4,11 @@ Dettes identifiées par l'orchestrateur (`.orchestrator/backlog.md`, généré l
 
 ## 🔴 Priorité haute
 
-- [ ] **`sveltekit-action-contract`** — Contrats de routes/actions SvelteKit (fréq. 8, en cours)
+- [x] **`sveltekit-action-contract`** — Contrats de routes/actions SvelteKit (fréq. 8, résolue)
   - Le 500 bloquant (mélange action `default` + action nommée) est corrigé.
-  - Reste : la suppression renvoie un succès même sur un id inexistant (devrait être un 404).
-  - Reste : la garde d'accès perd l'URL demandée (pas de retour vers la page initiale après connexion).
-  - Reste : le logout est une interception artisanale dans `hooks.server.ts` au lieu d'une route dédiée.
+  - Les actions mutantes renvoient des statuts cohérents : id invalide -> 400, KB introuvable -> 404 (plus de succès silencieux).
+  - La garde d'accès propage l'URL demandée via `redirectTo` (chemin same-origin validé) et y ramène l'utilisateur après connexion.
+  - Le logout est désormais une route dédiée (`/logout`, endpoint POST) ; l'interception artisanale de `hooks.server.ts` est retirée.
 
 - [x] **`auth-session-security`** — Failles de session/authentification (fréq. 6, traité le 2026-07-09) — risques résiduels suivis ci-dessous
   - Une vérification d'expiration côté serveur (`iat` signé) a été ajoutée.
