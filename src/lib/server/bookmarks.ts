@@ -61,26 +61,42 @@ export function parseCategoryName(raw: unknown): ParseCategoryNameResult {
 }
 
 /**
- * True when `error` is a SQLite unique-constraint violation. Both the duplicate
- * category name and the duplicate (cardId, categoryId) bookmark are enforced by
- * unique indexes, so callers use this to map either to a 4xx instead of a 500.
- *
- * Drizzle can surface the driver error either directly or wrapped (e.g. a
- * `DrizzleQueryError` exposing the original via `cause`), so we walk the
- * `cause` chain rather than only inspecting the top-level error.
+ * True when `error` carries the given SQLite constraint `code` somewhere in its
+ * `cause` chain. Drizzle can surface the driver error either directly or wrapped
+ * (e.g. a `DrizzleQueryError` exposing the original via `cause`), so we walk the
+ * chain rather than only inspecting the top-level error.
  */
-export function isUniqueConstraintError(error: unknown): boolean {
+function hasSqliteErrorCode(error: unknown, code: string): boolean {
 	for (let current: unknown = error; current !== null && current !== undefined; ) {
 		if (
 			typeof current === 'object' &&
 			'code' in current &&
-			(current as { code?: unknown }).code === 'SQLITE_CONSTRAINT_UNIQUE'
+			(current as { code?: unknown }).code === code
 		) {
 			return true;
 		}
 		current = typeof current === 'object' ? (current as { cause?: unknown }).cause : undefined;
 	}
 	return false;
+}
+
+/**
+ * True when `error` is a SQLite unique-constraint violation. Both the duplicate
+ * category name and the duplicate (cardId, categoryId) bookmark are enforced by
+ * unique indexes, so callers use this to map either to a 4xx instead of a 500.
+ */
+export function isUniqueConstraintError(error: unknown): boolean {
+	return hasSqliteErrorCode(error, 'SQLITE_CONSTRAINT_UNIQUE');
+}
+
+/**
+ * True when `error` is a SQLite foreign-key constraint violation. `foreign_keys`
+ * is ON (see db/index.ts), so bookmarking a card or category that no longer
+ * exists (e.g. a stale study tab whose card was cascade-removed, or a category
+ * deleted in another tab) raises this; callers map it to a 404 instead of a 500.
+ */
+export function isForeignKeyConstraintError(error: unknown): boolean {
+	return hasSqliteErrorCode(error, 'SQLITE_CONSTRAINT_FOREIGNKEY');
 }
 
 /** List all bookmark categories, ordered by name then id for a stable display. */
@@ -129,17 +145,21 @@ export function deleteBookmarkCategory(db: Db, id: number): boolean {
 	return db.delete(bookmarkCategories).where(eq(bookmarkCategories.id, id)).run().changes > 0;
 }
 
-/** Outcome of adding a bookmark: either newly created or already present. */
+/**
+ * Outcome of adding a bookmark: created, already present (`duplicate`), or
+ * referencing a card/category that no longer exists (`missing-reference`).
+ */
 export type AddBookmarkResult =
-	| { ok: true; created: boolean }
-	| { ok: false; reason: 'duplicate' };
+	| { ok: true; created: true }
+	| { ok: false; reason: 'duplicate' | 'missing-reference' };
 
 /**
  * Bookmark a card into a category (task 9.2). Idempotent: the schema enforces a
- * unique (cardId, categoryId) pair, so a second call for the same pair is
- * caught and reported as an already-bookmarked no-op instead of throwing a 500.
- * Returns `{ ok: true, created }` where `created` is false when the bookmark
- * already existed, or `{ ok: false, reason: 'duplicate' }` — both are safe.
+ * unique (cardId, categoryId) pair, so a second call for the same pair is caught
+ * and reported as `{ ok: false, reason: 'duplicate' }` instead of throwing a 500.
+ * A card or category that no longer exists trips the foreign-key constraint and
+ * is reported as `{ ok: false, reason: 'missing-reference' }` (mapped to a 404).
+ * On a fresh insert it returns `{ ok: true, created: true }`.
  */
 export function addBookmark(db: Db, cardId: number, categoryId: number): AddBookmarkResult {
 	try {
@@ -148,6 +168,9 @@ export function addBookmark(db: Db, cardId: number, categoryId: number): AddBook
 	} catch (error) {
 		if (isUniqueConstraintError(error)) {
 			return { ok: false, reason: 'duplicate' };
+		}
+		if (isForeignKeyConstraintError(error)) {
+			return { ok: false, reason: 'missing-reference' };
 		}
 		throw error;
 	}

@@ -129,7 +129,15 @@
 										<form method="POST" action="?/removeBookmark" use:enhance>
 											<input type="hidden" name="cardId" value={bookmark.cardId} />
 											<input type="hidden" name="categoryId" value={category.id} />
-											<button type="submit" class="danger">Remove</button>
+											<button
+												type="submit"
+												class="danger"
+												aria-label="Remove {bookmark.cardTitle ||
+													bookmark.cardSlug ||
+													`Card ${bookmark.cardId}`} from {category.name}"
+											>
+												Remove
+											</button>
 										</form>
 									</li>
 								{/each}

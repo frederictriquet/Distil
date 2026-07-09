@@ -122,6 +122,15 @@ export const actions: Actions = {
 
 		const result = addBookmark(db, cardId, categoryId);
 		if (!result.ok) {
+			if (result.reason === 'missing-reference') {
+				// The referenced card or category no longer exists (foreign-key
+				// violation, e.g. a stale study tab); report it as a handled 404
+				// rather than letting it crash with a 500.
+				return fail(404, {
+					action: 'addBookmark',
+					error: 'The card or category no longer exists.'
+				});
+			}
 			// The (cardId, categoryId) pair is already bookmarked; treat as a 4xx
 			// no-op rather than letting the unique constraint crash with a 500.
 			return fail(409, { action: 'addBookmark', error: 'This card is already bookmarked in this category.' });
