@@ -10,7 +10,7 @@ Dettes identifiées par l'orchestrateur (`.orchestrator/backlog.md`, généré l
   - Reste : la garde d'accès perd l'URL demandée (pas de retour vers la page initiale après connexion).
   - Reste : le logout est une interception artisanale dans `hooks.server.ts` au lieu d'une route dédiée.
 
-- [ ] **`auth-session-security`** — Failles de session/authentification (fréq. 6, en cours)
+- [x] **`auth-session-security`** — Failles de session/authentification (fréq. 6, traité le 2026-07-09) — risques résiduels suivis ci-dessous
   - Une vérification d'expiration côté serveur (`iat` signé) a été ajoutée.
   - Fait : révocation serveur au logout (époque de révocation en mémoire, appliquée par la garde d'accès dans `hooks.server.ts`).
   - Fait : limitation de débit / anti-force brute sur la connexion (compteur d'échecs par IP avec fenêtre de verrouillage, `429` quand la limite est atteinte).
