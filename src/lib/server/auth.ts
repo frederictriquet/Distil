@@ -166,17 +166,3 @@ export function sessionCookieOptions(secure: boolean) {
 		maxAge: SESSION_MAX_AGE
 	};
 }
-
-/**
- * Serialize a `Set-Cookie` header value that immediately expires the session
- * cookie (logout). Used where a Response is built by hand rather than through
- * SvelteKit's `cookies` API; the attributes mirror `sessionCookieOptions` so
- * the browser matches and removes the same cookie.
- */
-export function serializeClearedSessionCookie(secure: boolean): string {
-	const parts = [`${SESSION_COOKIE}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0'];
-	if (secure) {
-		parts.push('Secure');
-	}
-	return parts.join('; ');
-}
