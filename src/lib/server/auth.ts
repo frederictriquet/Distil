@@ -26,9 +26,31 @@ export const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
  */
 export const MIN_SESSION_SECRET_LENGTH = 16;
 
-/** Whether a SESSION_SECRET is present and long enough to be safe to use. */
+/**
+ * Known-placeholder guard for SESSION_SECRET. A value that ships in the
+ * template (e.g. `change-me-to-a-long-random-string`) is long enough to pass
+ * the length check yet gives no real security, so it is rejected explicitly.
+ * The word separators are matched as an optional base64url character
+ * (`-` or `_`) so placeholders written in either style are still caught. The
+ * leading boundary is "start of string OR any non-alphanumeric character": in
+ * the base64url alphabet the only non-alphanumeric characters are `-` and `_`,
+ * which are exactly the separators a human uses between placeholder words
+ * (`my-app-placeholder-secret`, `staging_example_secret`), so they count as
+ * word boundaries rather than being swallowed as part of a token.
+ */
+export const PLACEHOLDER_SECRET_PATTERN =
+	/(^|[^A-Za-z0-9])(change[-_]?me|placeholder|example|to[-_]?a[-_]?long[-_]?random)/i;
+
+/**
+ * Whether a SESSION_SECRET is present, long enough, and not a known
+ * placeholder, i.e. safe to use for signing sessions.
+ */
 export function isUsableSecret(secret: string | undefined): secret is string {
-	return typeof secret === 'string' && secret.length >= MIN_SESSION_SECRET_LENGTH;
+	return (
+		typeof secret === 'string' &&
+		secret.length >= MIN_SESSION_SECRET_LENGTH &&
+		!PLACEHOLDER_SECRET_PATTERN.test(secret)
+	);
 }
 
 /**
@@ -66,13 +88,15 @@ export function createSessionToken(secret: string): string {
  * Verify a session token's signature in constant time and enforce its
  * server-side lifetime.
  *
- * Returns the decoded payload string when the signature is valid AND the token
- * was issued within SESSION_MAX_AGE, or `null` when the token is malformed, the
- * signature does not match, or it has expired. Checking the signed `iat` here
- * (not just the client-controlled cookie Max-Age) means a leaked cookie stops
- * working once it ages past the window instead of remaining valid forever.
+ * Returns the token's signed issue time (`iat`, ms epoch) when the signature is
+ * valid AND the token was issued within SESSION_MAX_AGE, or `null` when the
+ * token is malformed, the signature does not match, or it has expired. Checking
+ * the signed `iat` here (not just the client-controlled cookie Max-Age) means a
+ * leaked cookie stops working once it ages past the window instead of remaining
+ * valid forever. The `iat` is returned (not the raw payload) so callers do not
+ * have to decode and re-validate it a second time.
  */
-export function verifySessionToken(token: string, secret: string): string | null {
+export function verifySessionToken(token: string, secret: string): number | null {
 	const dot = token.lastIndexOf('.');
 	if (dot <= 0 || dot === token.length - 1) {
 		return null;
@@ -106,12 +130,27 @@ export function verifySessionToken(token: string, secret: string): string | null
 		return null;
 	}
 
-	return payload;
+	return iat;
 }
 
 /** Whether a cookie value carries a valid, correctly-signed session. */
 export function isValidSession(token: string | undefined, secret: string): boolean {
 	return typeof token === 'string' && verifySessionToken(token, secret) !== null;
+}
+
+/**
+ * Return the signed issue time (`iat`, ms epoch) of a valid, unexpired token,
+ * or `null` when the token is missing, malformed, unsigned, or expired.
+ *
+ * The auth guard uses this to enforce server-side revocation: a token is only
+ * accepted when it authenticates here AND was issued after the revocation
+ * epoch, so a logout can invalidate an otherwise still-valid stateless token.
+ */
+export function getSessionIssuedAt(token: string | undefined, secret: string): number | null {
+	if (typeof token !== 'string') {
+		return null;
+	}
+	return verifySessionToken(token, secret);
 }
 
 /**

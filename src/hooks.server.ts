@@ -17,10 +17,11 @@ import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import {
 	SESSION_COOKIE,
+	getSessionIssuedAt,
 	isUsableSecret,
-	isValidSession,
 	serializeClearedSessionCookie
 } from '$lib/server/auth';
+import { isSessionRevoked, revokeSessionsIssuedBefore } from '$lib/server/session-revocation';
 
 /** Routes reachable without a valid session. */
 const PUBLIC_PATHS = ['/login'];
@@ -39,8 +40,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (typeof secret === 'string' && secret.length > 0 && !isUsableSecret(secret) && !warnedWeakSecret) {
 		warnedWeakSecret = true;
 		console.warn(
-			'SESSION_SECRET is too short to be safe; use a long random value (see .env.example). ' +
-				'Sessions are disabled until it is fixed.'
+			'SESSION_SECRET is too short or a known placeholder; use a long random value ' +
+				'(see .env.example). Sessions are disabled until it is fixed.'
 		);
 	}
 
@@ -52,6 +53,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.url.pathname === '/login' &&
 		event.url.searchParams.has('/logout');
 	if (isLogoutRequest) {
+		// Revoke the presented token server-side before clearing the cookie, so
+		// the stateless token cannot keep authenticating even if it is replayed
+		// after logout. Distil is single-user, so revoking everything issued at
+		// or before this token's issue time invalidates the active session.
+		if (isUsableSecret(secret)) {
+			const iat = getSessionIssuedAt(event.cookies.get(SESSION_COOKIE), secret);
+			if (iat !== null) {
+				revokeSessionsIssuedBefore(iat);
+			}
+		}
 		return new Response(null, {
 			status: 303,
 			headers: {
@@ -77,8 +88,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.request.headers.set('accept', 'text/html');
 	}
 
-	event.locals.authenticated =
-		isUsableSecret(secret) && isValidSession(event.cookies.get(SESSION_COOKIE), secret);
+	// A session is authentic only when the secret is usable, the token verifies
+	// (signature + lifetime), and it has not been revoked by a prior logout.
+	const iat = isUsableSecret(secret)
+		? getSessionIssuedAt(event.cookies.get(SESSION_COOKIE), secret)
+		: null;
+	event.locals.authenticated = iat !== null && !isSessionRevoked(iat);
 
 	if (!event.locals.authenticated && !isPublicPath(event.url.pathname)) {
 		redirect(303, '/login');

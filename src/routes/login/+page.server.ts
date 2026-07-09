@@ -17,6 +17,11 @@ import {
 	sessionCookieOptions,
 	verifyPassword
 } from '$lib/server/auth';
+import {
+	checkLoginRateLimit,
+	clearLoginAttempts,
+	recordFailedLogin
+} from '$lib/server/rate-limit';
 
 // Fixed delay applied after a failed password attempt. It does not stop a
 // determined attacker but raises the cost of online guessing against the single
@@ -32,7 +37,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 export const actions: Actions = {
-	default: async ({ request, cookies }) => {
+	default: async ({ request, cookies, getClientAddress, setHeaders }) => {
 		const appPassword = env.APP_PASSWORD;
 		const secret = env.SESSION_SECRET;
 		if (!appPassword || !isUsableSecret(secret)) {
@@ -41,13 +46,29 @@ export const actions: Actions = {
 			});
 		}
 
+		// Throttle brute-force guessing before doing any work: once a client IP is
+		// locked out, reject with 429 and advertise the retry delay.
+		const clientKey = getClientAddress();
+		const now = Date.now();
+		const limit = checkLoginRateLimit(clientKey, now);
+		if (limit.limited) {
+			const retryAfter = Math.ceil(limit.retryAfterMs / 1000);
+			setHeaders({ 'retry-after': String(retryAfter) });
+			return fail(429, {
+				error: `Too many failed login attempts. Try again in ${retryAfter} seconds.`
+			});
+		}
+
 		const data = await request.formData();
 		const password = data.get('password');
 		if (typeof password !== 'string' || !verifyPassword(password, appPassword)) {
+			recordFailedLogin(clientKey, now);
 			await new Promise((resolve) => setTimeout(resolve, FAILED_LOGIN_DELAY_MS));
 			return fail(401, { error: 'Incorrect password.' });
 		}
 
+		// Successful login: drop any accumulated failures for this client.
+		clearLoginAttempts(clientKey);
 		cookies.set(SESSION_COOKIE, createSessionToken(secret), sessionCookieOptions(!dev));
 		redirect(303, '/');
 	}
