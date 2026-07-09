@@ -70,13 +70,22 @@ let shutdownHooksRegistered = false;
  * Wire {@link closeDb} to process termination so a graceful shutdown checkpoints
  * the WAL instead of leaving `-wal`/`-shm` files behind.
  *
- * `exit` fires on any clean exit and runs synchronously, which suits
- * better-sqlite3's synchronous `close()`. Signals (`SIGINT`/`SIGTERM`) do not
- * trigger `exit` on their own, so we close explicitly and then exit for those.
+ * We only register a `process.on('exit')` listener: it fires on any clean exit
+ * and runs synchronously, which suits better-sqlite3's synchronous `close()`.
+ * We deliberately do NOT install our own `SIGINT`/`SIGTERM` handlers. In
+ * production this app runs under `@sveltejs/adapter-node`, which owns graceful
+ * signal handling — it drains in-flight requests before calling `process.exit()`
+ * itself. Closing the connection and forcing an exit from a signal handler here
+ * would race and abort that drain (and, in dev, preempt Vite's own Ctrl+C
+ * cleanup). Letting the process reach a normal `exit` is enough: the `exit`
+ * hook then checkpoints the WAL.
  *
- * Registration is guarded so calling this more than once (e.g. on a dev
- * hot-reload) does not stack duplicate listeners, and {@link closeDb} is itself
- * safe to call repeatedly, so the hooks are idempotent.
+ * The guard below only prevents this single module instance from stacking
+ * duplicate listeners across repeated calls; it does not survive a Vite SSR
+ * hot-reload, which re-instantiates the module (resetting the flag) while the
+ * previously registered listener persists on the global `process` object.
+ * {@link closeDb} is itself safe to call repeatedly, so a stale duplicate is
+ * harmless if one does accumulate.
  */
 export function registerDbShutdownHooks(): void {
 	if (shutdownHooksRegistered) {
@@ -87,11 +96,4 @@ export function registerDbShutdownHooks(): void {
 	process.on('exit', () => {
 		closeDb();
 	});
-
-	for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-		process.once(signal, () => {
-			closeDb();
-			process.exit(0);
-		});
-	}
 }
