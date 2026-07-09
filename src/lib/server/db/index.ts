@@ -63,3 +63,35 @@ export function closeDb(): void {
 		database = undefined;
 	}
 }
+
+let shutdownHooksRegistered = false;
+
+/**
+ * Wire {@link closeDb} to process termination so a graceful shutdown checkpoints
+ * the WAL instead of leaving `-wal`/`-shm` files behind.
+ *
+ * `exit` fires on any clean exit and runs synchronously, which suits
+ * better-sqlite3's synchronous `close()`. Signals (`SIGINT`/`SIGTERM`) do not
+ * trigger `exit` on their own, so we close explicitly and then exit for those.
+ *
+ * Registration is guarded so calling this more than once (e.g. on a dev
+ * hot-reload) does not stack duplicate listeners, and {@link closeDb} is itself
+ * safe to call repeatedly, so the hooks are idempotent.
+ */
+export function registerDbShutdownHooks(): void {
+	if (shutdownHooksRegistered) {
+		return;
+	}
+	shutdownHooksRegistered = true;
+
+	process.on('exit', () => {
+		closeDb();
+	});
+
+	for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+		process.once(signal, () => {
+			closeDb();
+			process.exit(0);
+		});
+	}
+}

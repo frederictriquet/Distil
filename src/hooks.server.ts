@@ -21,6 +21,12 @@ import {
 	isValidSession,
 	serializeClearedSessionCookie
 } from '$lib/server/auth';
+import { registerDbShutdownHooks } from '$lib/server/db';
+
+// Wire the SQLite connection close to process termination once, at server
+// startup, so a graceful shutdown checkpoints the WAL instead of leaving stray
+// `-wal`/`-shm` files behind. This module is loaded once when the server boots.
+registerDbShutdownHooks();
 
 /** Routes reachable without a valid session. */
 const PUBLIC_PATHS = ['/login'];
