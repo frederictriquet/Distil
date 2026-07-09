@@ -31,13 +31,15 @@ export const MIN_SESSION_SECRET_LENGTH = 16;
  * template (e.g. `change-me-to-a-long-random-string`) is long enough to pass
  * the length check yet gives no real security, so it is rejected explicitly.
  * The word separators are matched as an optional base64url character
- * (`-` or `_`) so placeholders written in either style — and the base64url
- * character set a real generated secret uses — are still caught. Anchored to
- * word starts / non-base64url boundaries to avoid matching those fragments
- * inside a genuine random secret.
+ * (`-` or `_`) so placeholders written in either style are still caught. The
+ * leading boundary is "start of string OR any non-alphanumeric character": in
+ * the base64url alphabet the only non-alphanumeric characters are `-` and `_`,
+ * which are exactly the separators a human uses between placeholder words
+ * (`my-app-placeholder-secret`, `staging_example_secret`), so they count as
+ * word boundaries rather than being swallowed as part of a token.
  */
 export const PLACEHOLDER_SECRET_PATTERN =
-	/(^|[^A-Za-z0-9_-])(change[-_]?me|placeholder|example|to[-_]?a[-_]?long[-_]?random)/i;
+	/(^|[^A-Za-z0-9])(change[-_]?me|placeholder|example|to[-_]?a[-_]?long[-_]?random)/i;
 
 /**
  * Whether a SESSION_SECRET is present, long enough, and not a known
@@ -86,13 +88,15 @@ export function createSessionToken(secret: string): string {
  * Verify a session token's signature in constant time and enforce its
  * server-side lifetime.
  *
- * Returns the decoded payload string when the signature is valid AND the token
- * was issued within SESSION_MAX_AGE, or `null` when the token is malformed, the
- * signature does not match, or it has expired. Checking the signed `iat` here
- * (not just the client-controlled cookie Max-Age) means a leaked cookie stops
- * working once it ages past the window instead of remaining valid forever.
+ * Returns the token's signed issue time (`iat`, ms epoch) when the signature is
+ * valid AND the token was issued within SESSION_MAX_AGE, or `null` when the
+ * token is malformed, the signature does not match, or it has expired. Checking
+ * the signed `iat` here (not just the client-controlled cookie Max-Age) means a
+ * leaked cookie stops working once it ages past the window instead of remaining
+ * valid forever. The `iat` is returned (not the raw payload) so callers do not
+ * have to decode and re-validate it a second time.
  */
-export function verifySessionToken(token: string, secret: string): string | null {
+export function verifySessionToken(token: string, secret: string): number | null {
 	const dot = token.lastIndexOf('.');
 	if (dot <= 0 || dot === token.length - 1) {
 		return null;
@@ -126,7 +130,7 @@ export function verifySessionToken(token: string, secret: string): string | null
 		return null;
 	}
 
-	return payload;
+	return iat;
 }
 
 /** Whether a cookie value carries a valid, correctly-signed session. */
@@ -146,17 +150,7 @@ export function getSessionIssuedAt(token: string | undefined, secret: string): n
 	if (typeof token !== 'string') {
 		return null;
 	}
-	const payload = verifySessionToken(token, secret);
-	if (payload === null) {
-		return null;
-	}
-	try {
-		const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-		const iat = (decoded as { iat?: unknown })?.iat;
-		return typeof iat === 'number' && Number.isFinite(iat) ? iat : null;
-	} catch {
-		return null;
-	}
+	return verifySessionToken(token, secret);
 }
 
 /**

@@ -12,9 +12,11 @@ Dettes identifiées par l'orchestrateur (`.orchestrator/backlog.md`, généré l
 
 - [ ] **`auth-session-security`** — Failles de session/authentification (fréq. 6, en cours)
   - Une vérification d'expiration côté serveur (`iat` signé) a été ajoutée.
-  - Reste : les jetons sans état restent valides 30 jours après le logout (pas de révocation serveur).
-  - Reste : aucune limitation de débit / protection anti-force brute sur la connexion.
-  - Reste : gestion partielle d'un `SESSION_SECRET` faible ou absent (à imposer et documenter).
+  - Fait : révocation serveur au logout (époque de révocation en mémoire, appliquée par la garde d'accès dans `hooks.server.ts`).
+  - Fait : limitation de débit / anti-force brute sur la connexion (compteur d'échecs par IP avec fenêtre de verrouillage, `429` quand la limite est atteinte).
+  - Fait : `SESSION_SECRET` imposé à la frontière serveur (longueur minimale, rejet des placeholders y compris jeux base64url) et documenté dans `.env.example`.
+  - Risque résiduel : l'époque de révocation et les verrous anti-force brute vivent uniquement en mémoire du process ; un redémarrage/déploiement les réinitialise, si bien qu'un jeton déconnecté redevient valide jusqu'à l'expiration des 30 jours. Persistance (ou baisse de `SESSION_MAX_AGE`) à envisager si le mono-process ne suffit plus.
+  - Risque résiduel : derrière un reverse proxy, `getClientAddress()` retombe sur l'IP du proxy sauf si `ADDRESS_HEADER` est configuré (documenté dans `.env.example`), sinon la limitation devient globale.
 
 - [ ] **`runtime-error-handling`** — Erreurs runtime non gérées côté serveur (fréq. 5, en cours)
   - Le 500 sur KB dupliquée (SqliteError) est corrigé.

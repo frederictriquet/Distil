@@ -27,6 +27,28 @@ interface AttemptRecord {
 const attempts = new Map<string, AttemptRecord>();
 
 /**
+ * Whether a record is spent as of `now`: its failure window has fully elapsed
+ * and it is not (or no longer) locked out, so it carries no live state.
+ */
+function isStale(record: AttemptRecord, now: number): boolean {
+	return record.lockedUntil <= now && now - record.firstFailureAt > FAILURE_WINDOW_MS;
+}
+
+/**
+ * Drop records that no longer track live state. Called opportunistically on
+ * each access so the map cannot grow without bound when an attacker rotates
+ * keys (e.g. source IPs) — otherwise every distinct key would leave a permanent
+ * entry in this long-lived single-process store.
+ */
+function pruneExpired(now: number): void {
+	for (const [key, record] of attempts) {
+		if (isStale(record, now)) {
+			attempts.delete(key);
+		}
+	}
+}
+
+/**
  * Report whether `key` is currently locked out. `retryAfterMs` is the remaining
  * lockout time (0 when not limited).
  */
@@ -34,6 +56,7 @@ export function checkLoginRateLimit(
 	key: string,
 	now: number
 ): { limited: boolean; retryAfterMs: number } {
+	pruneExpired(now);
 	const record = attempts.get(key);
 	if (record && record.lockedUntil > now) {
 		return { limited: true, retryAfterMs: record.lockedUntil - now };
@@ -47,6 +70,7 @@ export function checkLoginRateLimit(
  * count reaches MAX_FAILED_ATTEMPTS.
  */
 export function recordFailedLogin(key: string, now: number): void {
+	pruneExpired(now);
 	let record = attempts.get(key);
 	if (!record || now - record.firstFailureAt > FAILURE_WINDOW_MS) {
 		record = { failures: 0, firstFailureAt: now, lockedUntil: 0 };
