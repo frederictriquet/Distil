@@ -22,13 +22,15 @@
 //
 // Every check here runs the real `src/lib/server/kb.ts`, `src/lib/server/db/
 // index.ts` and `src/routes/kb/+page.server.ts` modules out-of-process
-// through `tsx` (this project's own transitive dependency via drizzle-kit),
-// via small harness scripts written to a throwaway temp file, mirroring the
-// pattern already used by tests/kb-management.test.cjs. Every database file
-// and cache directory used lives under a fresh `mkdtempSync` directory, so
-// this suite never touches the real project `data/` tree.
+// through `tsx` (a direct devDependency of this project), via small harness
+// scripts written to a throwaway temp file, mirroring the pattern already
+// used by tests/kb-management.test.cjs. Every database file and cache
+// directory used lives under a fresh `mkdtempSync` directory, so this suite
+// never touches the real project `data/` tree.
 //
-// Run with: node --test tests/
+// File: tests/runtime-error-handling.test.cjs
+// Run with: npm test
+//   (single file: node --test tests/runtime-error-handling.test.cjs)
 'use strict';
 
 const { test, describe, before, after } = require('node:test');
@@ -42,6 +44,19 @@ const ROOT = path.resolve(__dirname, '..');
 const Database = require(path.join(ROOT, 'node_modules', 'better-sqlite3'));
 const TSX_CLI = require.resolve('tsx/cli');
 const DRIZZLE_KIT_CLI = path.join(ROOT, 'node_modules', 'drizzle-kit', 'bin.cjs');
+
+// The best-effort-purge tests provoke the expected fs failure by dropping a
+// directory's write bit (chmod 0o555). That only actually blocks removal for
+// an unprivileged POSIX user: the root user ignores the permission and on
+// Windows chmod merely toggles the read-only attribute, which does not stop a
+// directory's contents from being removed. Where the lock cannot be produced,
+// rmSync just succeeds and the EACCES swallow branch is never entered — so we
+// skip those tests there rather than let them pass vacuously.
+const CANNOT_LOCK_VIA_CHMOD =
+	process.platform === 'win32' || (typeof process.getuid === 'function' && process.getuid() === 0);
+const SKIP_UNLOCKABLE =
+	CANNOT_LOCK_VIA_CHMOD &&
+	'chmod 0o555 does not block removal as root or on Windows, so the expected-EACCES purge branch cannot be exercised here';
 
 /**
  * Run the project's reproducible migration against an isolated database
@@ -304,69 +319,6 @@ function runShutdownHarnessUntilExit(databasePath) {
 	});
 }
 
-/**
- * Spawn the shutdown harness against `databasePath`, wait for its READY
- * marker, then deliver `signal` and confirm the process does NOT terminate
- * on its own: registerDbShutdownHooks() must not force an immediate exit on
- * SIGINT/SIGTERM, since in production that would race and abort
- * adapter-node's own graceful drain of in-flight requests. The child is
- * force-killed afterwards purely as test cleanup, not as an assertion.
- */
-function runShutdownHarnessSignalMustNotExit(databasePath, signal) {
-	return new Promise((resolve, reject) => {
-		const child = spawn(process.execPath, [TSX_CLI, shutdownHarnessPath, ROOT], {
-			cwd: ROOT,
-			env: { ...process.env, DATABASE_PATH: databasePath }
-		});
-
-		let stdout = '';
-		let stderr = '';
-		let signalSent = false;
-		let settled = false;
-
-		const guard = setTimeout(() => {
-			if (settled) return;
-			settled = true;
-			child.kill('SIGKILL');
-			reject(new Error(`shutdown harness never became ready.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
-		}, 10 * 1000);
-
-		child.stdout.on('data', (chunk) => {
-			stdout += chunk.toString();
-			if (!signalSent && stdout.includes('READY')) {
-				signalSent = true;
-				child.kill(signal);
-				setTimeout(() => {
-					if (settled) return;
-					settled = true;
-					clearTimeout(guard);
-					child.kill('SIGKILL');
-					resolve({ stayedAlive: true, stdout, stderr });
-				}, 500);
-			}
-		});
-		child.stderr.on('data', (chunk) => {
-			stderr += chunk.toString();
-		});
-		child.on('error', (error) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(guard);
-			reject(error);
-		});
-		child.on('exit', (code, receivedSignal) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(guard);
-			reject(
-				new Error(
-					`the process exited (code=${code}, signal=${receivedSignal}) in reaction to ${signal} instead of staying alive for a graceful drain.\nstdout:\n${stdout}\nstderr:\n${stderr}`
-				)
-			);
-		});
-	});
-}
-
 describe('best-effort local-cache purge is non-fatal on expected fs errors', () => {
 	let workDir;
 
@@ -376,12 +328,18 @@ describe('best-effort local-cache purge is non-fatal on expected fs errors', () 
 
 	after(() => {
 		// Restore write permission before cleanup, else rmSync itself would
-		// hit the very same EACCES this suite is exercising.
-		fs.chmodSync(path.join(workDir, 'cache-expected', '1'), 0o755);
+		// hit the very same EACCES this suite is exercising. The locked dir may
+		// be gone already (root/Windows let the purge succeed), so tolerate its
+		// absence instead of crashing teardown with ENOENT.
+		try {
+			fs.chmodSync(path.join(workDir, 'cache-expected', '1'), 0o755);
+		} catch (error) {
+			if (error.code !== 'ENOENT') throw error;
+		}
 		fs.rmSync(workDir, { recursive: true, force: true });
 	});
 
-	test('purgeKnowledgeBaseCache swallows an expected fs error (EACCES) and does not throw', () => {
+	test('purgeKnowledgeBaseCache swallows an expected fs error (EACCES) and does not throw', { skip: SKIP_UNLOCKABLE }, () => {
 		const cacheBaseDir = path.join(workDir, 'cache-expected');
 		const lockedDir = path.join(cacheBaseDir, '1');
 		fs.mkdirSync(lockedDir, { recursive: true });
@@ -422,11 +380,17 @@ describe('deleting a KB completes despite a best-effort purge failure, but not s
 	});
 
 	after(() => {
-		fs.chmodSync(path.join(workDir, 'cache-expected', '1'), 0o755);
+		// The locked cache dir may already be gone (root/Windows let the purge
+		// succeed), so tolerate ENOENT instead of crashing teardown.
+		try {
+			fs.chmodSync(path.join(workDir, 'cache-expected', '1'), 0o755);
+		} catch (error) {
+			if (error.code !== 'ENOENT') throw error;
+		}
 		fs.rmSync(workDir, { recursive: true, force: true });
 	});
 
-	test('deleting a KB removes its row and reports success even though the cache purge hits an expected fs error', () => {
+	test('deleting a KB removes its row and reports success even though the cache purge hits an expected fs error', { skip: SKIP_UNLOCKABLE }, () => {
 		const created = runMain(dbPathExpected, 'createKb', {
 			name: 'Locked Cache KB',
 			repoUrl: 'https://example.test/locked.git',
@@ -548,45 +512,14 @@ describe('the SQLite connection is closed on process shutdown', () => {
 		assert.ok(!fs.existsSync(`${dbPath}-wal`), 'closing the connection must checkpoint and remove the WAL file');
 	});
 
-	test(
-		'receiving SIGTERM must not itself terminate the process',
-		{
-			skip:
-				process.platform === 'win32' &&
-				"sending POSIX signals via child.kill() unconditionally terminates the target process on Windows, so this process-survival assertion cannot be exercised there"
-		},
-		async () => {
-			const dbPath = path.join(workDir, 'sigterm-survives.db');
-			runMigrate(dbPath);
-
-			const outcome = await runShutdownHarnessSignalMustNotExit(dbPath, 'SIGTERM');
-			assert.equal(
-				outcome.stayedAlive,
-				true,
-				'registerDbShutdownHooks() must not force an immediate exit on SIGTERM: adapter-node owns graceful SIGTERM handling (draining in-flight requests) and calls process.exit() itself once done, which is what should trigger the checkpoint'
-			);
-		}
-	);
-
-	test(
-		'receiving SIGINT must not itself terminate the process',
-		{
-			skip:
-				process.platform === 'win32' &&
-				"sending POSIX signals via child.kill() unconditionally terminates the target process on Windows, so this process-survival assertion cannot be exercised there"
-		},
-		async () => {
-			const dbPath = path.join(workDir, 'sigint-survives.db');
-			runMigrate(dbPath);
-
-			const outcome = await runShutdownHarnessSignalMustNotExit(dbPath, 'SIGINT');
-			assert.equal(
-				outcome.stayedAlive,
-				true,
-				'registerDbShutdownHooks() must not force an immediate exit on SIGINT, for the same reason as SIGTERM'
-			);
-		}
-	);
+	// Note: we intentionally do NOT test "the process survives SIGTERM/SIGINT".
+	// A bare Node process with no handler for those signals is terminated by
+	// the OS default disposition, so such a test can never pass in this
+	// harness — and the real contract it was meant to protect (our shutdown
+	// hook must not install its own SIGINT/SIGTERM handler that would preempt
+	// adapter-node's graceful drain) is verified directly, by asserting the
+	// SIGINT/SIGTERM listener counts are unchanged, in the idempotence test
+	// below.
 
 	test('registerDbShutdownHooks() is idempotent and registers only the portable exit hook, not its own SIGINT/SIGTERM listeners', () => {
 		const dbPath = path.join(workDir, 'idempotent.db');

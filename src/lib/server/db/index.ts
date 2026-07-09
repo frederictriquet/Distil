@@ -64,7 +64,12 @@ export function closeDb(): void {
 	}
 }
 
-let shutdownHooksRegistered = false;
+// Guard kept on `globalThis` (not a module-local flag) so it survives a Vite
+// SSR hot-reload, which re-instantiates this module while the previously
+// registered `exit` listener persists on the shared `process` object. Keying
+// off the module instance instead would let a long dev session accumulate one
+// `exit` listener per reload and eventually hit MaxListenersExceededWarning.
+const SHUTDOWN_HOOKS_REGISTERED = Symbol.for('distil.db.shutdownHooksRegistered');
 
 /**
  * Wire {@link closeDb} to process termination so a graceful shutdown checkpoints
@@ -80,18 +85,16 @@ let shutdownHooksRegistered = false;
  * cleanup). Letting the process reach a normal `exit` is enough: the `exit`
  * hook then checkpoints the WAL.
  *
- * The guard below only prevents this single module instance from stacking
- * duplicate listeners across repeated calls; it does not survive a Vite SSR
- * hot-reload, which re-instantiates the module (resetting the flag) while the
- * previously registered listener persists on the global `process` object.
- * {@link closeDb} is itself safe to call repeatedly, so a stale duplicate is
- * harmless if one does accumulate.
+ * Registration is idempotent across repeated calls and across hot-reloads, so
+ * exactly one `exit` listener is ever added. {@link closeDb} is itself safe to
+ * call repeatedly regardless.
  */
 export function registerDbShutdownHooks(): void {
-	if (shutdownHooksRegistered) {
+	const guard = globalThis as Record<symbol, unknown>;
+	if (guard[SHUTDOWN_HOOKS_REGISTERED]) {
 		return;
 	}
-	shutdownHooksRegistered = true;
+	guard[SHUTDOWN_HOOKS_REGISTERED] = true;
 
 	process.on('exit', () => {
 		closeDb();
