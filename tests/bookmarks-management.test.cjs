@@ -15,15 +15,24 @@
 //     with no bookmarks are still listed (empty state), and the grouping is
 //     stably ordered.
 //
-// These exercise the real `src/lib/server/bookmarks.ts` module (the logic
-// behind the /bookmarks page) against a real, freshly migrated SQLite
-// database, following the same approach as tests/kb-management.test.cjs:
-// because that module is TypeScript with extension-less relative imports
-// (`./db/schema`), each check runs it out-of-process through `tsx` via a
-// small harness script written to a throwaway temp file. Every database file
-// used here lives under a fresh `mkdtempSync` directory, so this suite never
-// touches the real project `data/` tree and can run concurrently with the
-// rest of `node --test tests/`.
+// The first part of this suite exercises the real `src/lib/server/bookmarks.ts`
+// module (the logic behind the /bookmarks page) against a real, freshly
+// migrated SQLite database, following the same approach as
+// tests/kb-management.test.cjs: because that module is TypeScript with
+// extension-less relative imports (`./db/schema`), each check runs it
+// out-of-process through `tsx` via a small harness script written to a
+// throwaway temp file. Every database file used here lives under a fresh
+// `mkdtempSync` directory, so this suite never touches the real project
+// `data/` tree and can run concurrently with the rest of `node --test tests/`.
+//
+// The second part ("the bookmarks route's action/HTTP contract") drives the
+// actual SvelteKit `+page.server.ts` actions (createCategory, renameCategory,
+// deleteCategory, addBookmark, removeBookmark) over real HTTP against a
+// running instance of the app, the same way tests/access-guard-and-logout.test.cjs
+// covers the KB route's actions: this is the only way to observe the id
+// parsing (`parseId`) and HTTP status mapping (`fail(400)`/`fail(404)`/
+// `fail(409)`) that live in the route file itself, which the module-level
+// checks above cannot reach.
 //
 // Run with: node --test tests/
 'use strict';
@@ -33,7 +42,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const net = require('node:net');
+const http = require('node:http');
+const { spawn, spawnSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const Database = require(path.join(ROOT, 'node_modules', 'better-sqlite3'));
@@ -443,6 +454,383 @@ describe('listing bookmarks grouped by category (task 9.3)', () => {
 			[cardOneId, cardTwoId].sort()
 		);
 		assert.equal(beta.bookmarks.length, 1, "Beta's own bookmark must be unaffected by Alpha's second bookmark");
+	});
+});
+
+// --- Part 2: the /bookmarks route's action/HTTP contract -------------------
+//
+// Bootstraps Vite's dev server programmatically (the same engine `npm run dev`
+// uses), pointed at a throwaway copy of this repo (see buildIsolatedAppCopy
+// below), bound to a caller-chosen port. This mirrors
+// tests/access-guard-and-logout.test.cjs's harness exactly, including its
+// rationale: Vite/svelte-kit sync write cache/build state into the project
+// root they are pointed at, so the dev server is pointed at a temp copy
+// (node_modules brought in via a directory junction, never copied) instead of
+// this repo checkout, and the server binds to a port freshly probed from the
+// OS so this suite is safe to run concurrently with the rest of `node --test`.
+const HTTP_HARNESS_SOURCE = `
+import { pathToFileURL } from 'node:url';
+import path from 'node:path';
+
+const [, , rootDir, portArg] = process.argv;
+const port = Number(portArg);
+
+const viteEntry = pathToFileURL(path.join(rootDir, 'node_modules', 'vite', 'dist', 'node', 'index.js')).href;
+const { createServer } = await import(viteEntry);
+
+const server = await createServer({
+	root: rootDir,
+	configFile: path.join(rootDir, 'vite.config.ts'),
+	cacheDir: path.join(rootDir, '.vite-cache'),
+	server: { port, host: '127.0.0.1', strictPort: true },
+	logLevel: 'error'
+});
+
+await server.listen();
+process.stdout.write('READY\\n');
+`;
+
+const APP_COPY_FILES = ['package.json', 'svelte.config.js', 'vite.config.ts', 'tsconfig.json'];
+const APP_COPY_DIRS = ['src', 'static'];
+
+/** Materialize a throwaway copy of the project that Vite can be pointed at. */
+function buildIsolatedAppCopy() {
+	const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'distil-bookmarks-app-copy-'));
+	for (const file of APP_COPY_FILES) {
+		fs.cpSync(path.join(ROOT, file), path.join(appDir, file));
+	}
+	for (const dir of APP_COPY_DIRS) {
+		fs.cpSync(path.join(ROOT, dir), path.join(appDir, dir), { recursive: true });
+	}
+	fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(appDir, 'node_modules'), 'junction');
+	return appDir;
+}
+
+/** Ask the OS for a free TCP port by briefly binding to port 0, then release it. */
+function getEphemeralPort() {
+	return new Promise((resolve, reject) => {
+		const probe = net.createServer();
+		probe.once('error', reject);
+		probe.listen(0, '127.0.0.1', () => {
+			const { port } = probe.address();
+			probe.close((closeErr) => (closeErr ? reject(closeErr) : resolve(port)));
+		});
+	});
+}
+
+const STARTUP_TIMEOUT_MS = 30 * 1000;
+const SHUTDOWN_TIMEOUT_MS = 5 * 1000;
+
+/** Start the real app (via the Vite dev server harness above) with the given environment. */
+async function startApp(env) {
+	const port = await getEphemeralPort();
+	const appDir = buildIsolatedAppCopy();
+	const harnessDir = fs.mkdtempSync(path.join(os.tmpdir(), 'distil-bookmarks-web-harness-'));
+	const harnessPath = path.join(harnessDir, 'web-harness.mjs');
+	fs.writeFileSync(harnessPath, HTTP_HARNESS_SOURCE, 'utf8');
+
+	const child = spawn(process.execPath, [TSX_CLI, harnessPath, appDir, String(port)], {
+		cwd: appDir,
+		env: { ...process.env, ...env },
+		stdio: ['ignore', 'pipe', 'pipe']
+	});
+
+	let stdoutBuf = '';
+	let stderrBuf = '';
+	child.stdout.on('data', (chunk) => {
+		stdoutBuf += chunk.toString();
+	});
+	child.stderr.on('data', (chunk) => {
+		stderrBuf += chunk.toString();
+	});
+
+	await new Promise((resolve, reject) => {
+		let settled = false;
+
+		const timer = setTimeout(() => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			reject(
+				new Error(
+					`dev server harness did not report readiness within ${STARTUP_TIMEOUT_MS}ms.\n` +
+						`stdout:\n${stdoutBuf}\nstderr:\n${stderrBuf}`
+				)
+			);
+		}, STARTUP_TIMEOUT_MS);
+
+		function checkReady() {
+			if (settled || !/^READY$/m.test(stdoutBuf)) return;
+			settled = true;
+			cleanup();
+			resolve();
+		}
+		function onError(err) {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			reject(new Error(`failed to spawn the dev server harness: ${err.message}`));
+		}
+		function onExit(code, signal) {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			reject(
+				new Error(
+					`dev server harness exited early (code=${code}, signal=${signal}) before becoming ready.\n` +
+						`stderr:\n${stderrBuf}`
+				)
+			);
+		}
+		function cleanup() {
+			clearTimeout(timer);
+			child.stdout.removeListener('data', checkReady);
+			child.removeListener('error', onError);
+			child.removeListener('exit', onExit);
+		}
+
+		child.stdout.on('data', checkReady);
+		child.once('error', onError);
+		child.once('exit', onExit);
+		checkReady();
+	});
+
+	return {
+		baseUrl: `http://127.0.0.1:${port}`,
+		async stop() {
+			child.kill('SIGKILL');
+			await new Promise((resolve) => {
+				const timer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS);
+				child.once('close', () => {
+					clearTimeout(timer);
+					resolve();
+				});
+			});
+			child.stdout?.destroy();
+			child.stderr?.destroy();
+			fs.rmSync(harnessDir, { recursive: true, force: true });
+			fs.rmSync(path.join(appDir, 'node_modules'), { force: true });
+			fs.rmSync(appDir, { recursive: true, force: true });
+		}
+	};
+}
+
+const REQUEST_TIMEOUT_MS = 10 * 1000;
+
+/** A minimal fetch-shaped helper built on node:http; see access-guard-and-logout.test.cjs for the rationale (no dangling keep-alive sockets). */
+function fetch(url, { method = 'GET', headers = {}, body } = {}) {
+	const target = new URL(url);
+	const requestBody = body === undefined ? undefined : String(body);
+	const requestHeaders = { ...headers };
+	if (requestBody !== undefined) {
+		requestHeaders['content-type'] ??= 'application/x-www-form-urlencoded;charset=UTF-8';
+		requestHeaders['content-length'] = Buffer.byteLength(requestBody);
+	}
+	requestHeaders.connection = 'close';
+
+	return new Promise((resolve, reject) => {
+		const req = http.request(
+			{
+				hostname: target.hostname,
+				port: target.port,
+				path: target.pathname + target.search,
+				method,
+				headers: requestHeaders,
+				agent: false,
+				timeout: REQUEST_TIMEOUT_MS
+			},
+			(res) => {
+				const chunks = [];
+				res.on('data', (chunk) => chunks.push(chunk));
+				res.on('end', () => {
+					const rawBody = Buffer.concat(chunks).toString('utf8');
+					const setCookie = res.headers['set-cookie'];
+					resolve({
+						status: res.statusCode,
+						headers: {
+							get: (name) => {
+								const value = res.headers[name.toLowerCase()];
+								return Array.isArray(value) ? value.join(', ') : (value ?? null);
+							},
+							getSetCookie: () => (Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [])
+						},
+						async text() {
+							return rawBody;
+						},
+						async json() {
+							return JSON.parse(rawBody);
+						}
+					});
+				});
+				res.on('error', (err) => reject(new Error(`response error for ${url}: ${err.message}`)));
+			}
+		);
+		req.on('timeout', () => req.destroy(new Error(`request to ${url} timed out after ${REQUEST_TIMEOUT_MS}ms`)));
+		req.on('error', (err) => reject(new Error(`request error for ${url}: ${err.message}`)));
+		if (requestBody !== undefined) req.write(requestBody);
+		req.end();
+	});
+}
+
+const TEST_PASSWORD = 'correct horse battery staple';
+const TEST_SESSION_SECRET = 'y'.repeat(32);
+
+/** POST a classic (no-JS) login submission and return the raw response. */
+function submitLogin(baseUrl, password = TEST_PASSWORD) {
+	return fetch(`${baseUrl}/login`, {
+		method: 'POST',
+		redirect: 'manual',
+		body: new URLSearchParams({ password })
+	});
+}
+
+/** The `name=value` pair of the distil_session Set-Cookie header, for a subsequent request's Cookie header. */
+function extractSessionCookiePair(response) {
+	const setCookie = response.headers.getSetCookie();
+	const cookie = setCookie.find((c) => c.startsWith('distil_session='));
+	assert.ok(cookie, 'expected a distil_session Set-Cookie header from login');
+	return cookie.split(';')[0];
+}
+
+describe("the bookmarks route's action/HTTP contract (tasks 9.1, 9.2: id validation and status-code mapping)", () => {
+	let app;
+	let workDir;
+	let dbPath;
+	let cookie;
+	let cardId;
+	let categoryId;
+
+	before(async () => {
+		workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'distil-bookmarks-http-'));
+		dbPath = path.join(workDir, 'app.db');
+		runMigrate(dbPath);
+
+		// Fixture: a KB and a card, so addBookmark/removeBookmark have a real
+		// cardId to reference, plus a category for the id-validation checks.
+		const raw = new Database(dbPath);
+		raw
+			.prepare('INSERT INTO knowledge_bases (name, repo_url, branch) VALUES (?, ?, ?)')
+			.run('KB', 'https://example.test/repo.git', 'main');
+		const kbId = raw.prepare('SELECT last_insert_rowid() AS id').get().id;
+		raw.prepare('INSERT INTO cards (kb_id, slug, title, active) VALUES (?, ?, ?, 1)').run(kbId, 'card-1', 'Card One');
+		cardId = raw.prepare('SELECT last_insert_rowid() AS id').get().id;
+		raw
+			.prepare('INSERT INTO bookmark_categories (name) VALUES (?)')
+			.run('Existing Category');
+		categoryId = raw.prepare('SELECT last_insert_rowid() AS id').get().id;
+		raw.close();
+
+		app = await startApp({
+			APP_PASSWORD: TEST_PASSWORD,
+			SESSION_SECRET: TEST_SESSION_SECRET,
+			DATABASE_PATH: dbPath
+		});
+
+		const loginRes = await submitLogin(app.baseUrl);
+		assert.equal(loginRes.status, 303, 'sanity check: login must succeed before exercising the guarded route');
+		cookie = extractSessionCookiePair(loginRes);
+	});
+
+	after(async () => {
+		if (app) await app.stop();
+		if (workDir) fs.rmSync(workDir, { recursive: true, force: true });
+	});
+
+	/**
+	 * `Accept: text/html` mirrors a classic (no-JS) form submission, which is
+	 * the mode in which SvelteKit answers with the *real* HTTP status code for
+	 * a fail() result (see tests/access-guard-and-logout.test.cjs); without it,
+	 * fail()/success results are all wrapped in a 200 JSON envelope instead.
+	 */
+	function callBookmarksAction(action, formFields) {
+		return fetch(`${app.baseUrl}/bookmarks?/${action}`, {
+			method: 'POST',
+			redirect: 'manual',
+			headers: { cookie, accept: 'text/html' },
+			body: new URLSearchParams(formFields)
+		});
+	}
+
+	test('createCategory with a blank name answers 400, not a silent success', async () => {
+		assert.equal((await callBookmarksAction('createCategory', { name: '   ' })).status, 400);
+	});
+
+	test('createCategory with a name already in use answers 400 (handled unique-constraint violation)', async () => {
+		assert.equal((await callBookmarksAction('createCategory', { name: 'Existing Category' })).status, 400);
+	});
+
+	test('createCategory with a valid, unused name answers success (not wrapped in an error)', async () => {
+		const res = await callBookmarksAction('createCategory', { name: 'Brand New Category' });
+		assert.equal(res.status, 200);
+	});
+
+	test('renameCategory with a non-numeric id answers 400, not a silent success', async () => {
+		assert.equal((await callBookmarksAction('renameCategory', { id: 'not-a-number', name: 'Whatever' })).status, 400);
+	});
+
+	test('renameCategory with a missing id answers 400, not a silent success', async () => {
+		assert.equal((await callBookmarksAction('renameCategory', { name: 'Whatever' })).status, 400);
+	});
+
+	test('renameCategory for an id that does not exist answers 404, not a silent success', async () => {
+		assert.equal((await callBookmarksAction('renameCategory', { id: '999999', name: 'Ghost' })).status, 404);
+	});
+
+	test('renameCategory onto a name already used by another category answers 400', async () => {
+		const created = await callBookmarksAction('createCategory', { name: 'Rename Target Collision' });
+		assert.equal(created.status, 200);
+
+		const res = await callBookmarksAction('renameCategory', { id: String(categoryId), name: 'Rename Target Collision' });
+		assert.equal(res.status, 400);
+	});
+
+	test('deleteCategory with a non-numeric id answers 400, not a silent success', async () => {
+		assert.equal((await callBookmarksAction('deleteCategory', { id: 'nope' })).status, 400);
+	});
+
+	test('deleteCategory for an id that does not exist answers 404, not a silent success', async () => {
+		assert.equal((await callBookmarksAction('deleteCategory', { id: '999999' })).status, 404);
+	});
+
+	test('addBookmark with a non-numeric cardId or categoryId answers 400, not a silent success', async () => {
+		assert.equal((await callBookmarksAction('addBookmark', { cardId: 'x', categoryId: String(categoryId) })).status, 400);
+		assert.equal((await callBookmarksAction('addBookmark', { cardId: String(cardId), categoryId: 'y' })).status, 400);
+	});
+
+	test('addBookmark for a new (cardId, categoryId) pair answers success', async () => {
+		const res = await callBookmarksAction('addBookmark', { cardId: String(cardId), categoryId: String(categoryId) });
+		assert.equal(res.status, 200);
+	});
+
+	test('addBookmark for a pair that is already bookmarked answers 409, not a 500', async () => {
+		const res = await callBookmarksAction('addBookmark', { cardId: String(cardId), categoryId: String(categoryId) });
+		assert.equal(res.status, 409);
+	});
+
+	test('removeBookmark with a non-numeric cardId or categoryId answers 400, not a silent success', async () => {
+		assert.equal((await callBookmarksAction('removeBookmark', { cardId: 'x', categoryId: String(categoryId) })).status, 400);
+		assert.equal((await callBookmarksAction('removeBookmark', { cardId: String(cardId), categoryId: 'y' })).status, 400);
+	});
+
+	test('removeBookmark for a pair that exists answers success', async () => {
+		const res = await callBookmarksAction('removeBookmark', { cardId: String(cardId), categoryId: String(categoryId) });
+		assert.equal(res.status, 200);
+	});
+
+	test('removeBookmark for a pair that no longer exists answers 404, not a silent success', async () => {
+		const res = await callBookmarksAction('removeBookmark', { cardId: String(cardId), categoryId: String(categoryId) });
+		assert.equal(res.status, 404);
+	});
+
+	test('an unauthenticated attempt to call a bookmarks action is redirected by the guard, never executed', async () => {
+		const res = await fetch(`${app.baseUrl}/bookmarks?/deleteCategory`, {
+			method: 'POST',
+			redirect: 'manual',
+			headers: { accept: 'text/html' },
+			body: new URLSearchParams({ id: String(categoryId) })
+		});
+		assert.equal(res.status, 303);
+		assert.equal(res.headers.get('location'), '/login?redirectTo=' + encodeURIComponent('/bookmarks?/deleteCategory'));
 	});
 });
 
