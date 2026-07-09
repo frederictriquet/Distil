@@ -27,9 +27,9 @@ Ces bases transverses sont établies avant les pages pour que chacune en hérite
 - [x] **4.4** Mettre en place le mode sombre via ces tokens dès le départ (préférence système par défaut, bascule manuelle, mémorisation du choix), afin que chaque page construite ensuite en hérite.
 
 ## 5. Gestion des bases de connaissances (KB)
-- [ ] **5.1** Créer la page de gestion des KB (liste avec nom, dernière synchronisation, nombre de fiches actives).
-- [ ] **5.2** Permettre l'ajout d'une KB (nom, URL du dépôt git, branche, sous-dossier de contenu).
-- [ ] **5.3** Permettre l'activation/désactivation du « focus » d'une KB et sa suppression (avec purge du cache local).
+- [x] **5.1** Créer la page de gestion des KB (liste avec nom, dernière synchronisation, nombre de fiches actives).
+- [x] **5.2** Permettre l'ajout d'une KB (nom, URL du dépôt git, branche, sous-dossier de contenu).
+- [x] **5.3** Permettre l'activation/désactivation du « focus » d'une KB et sa suppression (avec purge du cache local).
 
 ## 6. Synchronisation et ingestion
 - [ ] **6.1** Implémenter le clonage initial puis la mise à jour (pull) d'un dépôt KB dans un cache local.

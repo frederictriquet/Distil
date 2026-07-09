@@ -129,8 +129,10 @@ describe('reusable UI foundation components stay generic (no business logic bake
 		assert.doesNotMatch(source, /knowledge base|bookmark/i, 'PageContainer must stay generic, not KB/bookmark-specific');
 	});
 
-	test('KB and Bookmarks placeholder pages both build on PageContainer + EmptyState, not bespoke markup', () => {
-		for (const route of ['src/routes/kb/+page.svelte', 'src/routes/bookmarks/+page.svelte']) {
+	test('the Bookmarks placeholder page builds on PageContainer + EmptyState, not bespoke markup', () => {
+		// The KB page is a real, implemented page (section 5), so it is no longer a
+		// placeholder; only pages still awaiting their feature stay on the foundations.
+		for (const route of ['src/routes/bookmarks/+page.svelte']) {
 			const source = readText(route);
 			assert.match(source, /import PageContainer from ['"]\$lib\/components\/PageContainer\.svelte['"]/, `${route} should reuse PageContainer`);
 			assert.match(source, /import EmptyState from ['"]\$lib\/components\/EmptyState\.svelte['"]/, `${route} should reuse EmptyState`);
