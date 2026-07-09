@@ -10,9 +10,9 @@ Tâches à réaliser dans l'ordre. Cocher `[x]` une tâche une fois terminée et
 - [x] **1.5** Définir les variables d'environnement nécessaires (mot de passe de l'app, secret de session, chemin de la base) et documenter leur usage.
 
 ## 2. Base de données
-- [ ] **2.1** Définir le schéma : bases de connaissances, fiches, préférences par thème, catégories de bookmarks, bookmarks, historique de lecture.
-- [ ] **2.2** Configurer Drizzle (fichier de config, client de connexion à SQLite).
-- [ ] **2.3** Générer et appliquer la première migration ; vérifier la création du fichier de base.
+- [x] **2.1** Définir le schéma : bases de connaissances, fiches, préférences par thème, catégories de bookmarks, bookmarks, historique de lecture.
+- [x] **2.2** Configurer Drizzle (fichier de config, client de connexion à SQLite).
+- [x] **2.3** Générer et appliquer la première migration ; vérifier la création du fichier de base.
 
 ## 3. Authentification
 - [x] **3.1** Mettre en place la session mono-utilisateur (cookie signé) et la vérification du mot de passe.
@@ -56,6 +56,8 @@ Tâches à réaliser dans l'ordre. Cocher `[x]` une tâche une fois terminée et
 - [ ] **10.1** Soigner la mise en forme et la navigation générale.
 - [ ] **10.2** Gérer les états vides (aucune KB, aucune KB en focus, aucun bookmark).
 - [ ] **10.3** Gérer proprement l'affichage d'une fiche devenue inactive après une synchronisation.
+- [ ] **10.4** Rendre l'application parfaitement utilisable sur téléphone (mise en page responsive, cibles tactiles suffisantes, aucun défilement horizontal parasite).
+- [ ] **10.5** Exploiter au mieux l'espace de l'écran, en particulier sur smartphone : supprimer les marges inutiles et maximiser la surface dédiée au contenu.
 
 ## 11. Vérification de bout en bout
 - [ ] **11.1** Ajouter une KB de test et lancer une synchronisation ; vérifier le nombre de fiches ingérées et l'exclusion des fichiers d'index.

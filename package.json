@@ -13,6 +13,8 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate": "node -e \"require('fs').mkdirSync(require('path').dirname((process.env.DATABASE_PATH||'').trim()||'data/distil.db'),{recursive:true})\" && drizzle-kit migrate",
 		"test": "node --test"
 	},
 	"devDependencies": {
