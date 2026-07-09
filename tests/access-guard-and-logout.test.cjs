@@ -24,13 +24,16 @@
 // because this behavior lives across hooks.server.ts, form actions and HTTP
 // semantics (redirect codes, Set-Cookie, content negotiation) that cannot be
 // observed by importing modules directly, unlike tests/kb-management.test.cjs.
-// It runs in-process against this repo checkout rather than a copied temp
-// tree: the harness never writes into the repo, and all of its mutable state
-// (the SQLite file) is redirected through DATABASE_PATH to a fresh temp
-// directory, so this suite is still safe to run concurrently and never
-// touches the real project data/ directory. The server binds to a port
-// freshly probed from the OS (never a hardcoded one), so concurrent runs
-// never collide either.
+// Vite (and the SvelteKit plugin's own `svelte-kit sync`) write cache/build
+// state into the project root they are pointed at, so the dev server is
+// pointed at a throwaway copy of the project (src/, static/ and the config
+// files, with node_modules brought in via a directory junction rather than
+// copied) instead of this repo checkout -- this suite never writes into the
+// real project tree (no node_modules/.vite, no .svelte-kit) and is safe to
+// run concurrently with the rest of `node --test tests/`. All of its mutable
+// state (the SQLite file) is likewise redirected through DATABASE_PATH to a
+// fresh temp directory. The server binds to a port freshly probed from the
+// OS (never a hardcoded one), so concurrent runs never collide either.
 //
 // Run with: node --test tests/
 'use strict';
@@ -54,12 +57,14 @@ const STARTUP_TIMEOUT_MS = 30 * 1000;
 const SHUTDOWN_TIMEOUT_MS = 5 * 1000;
 
 // Bootstraps Vite's dev server programmatically (the same engine `npm run dev`
-// uses), pointed at this repo's real vite.config.ts/svelte.config.js, bound to
-// a caller-chosen port. Importing 'vite' by its resolved entry file (rather
-// than a bare `import 'vite'`) is required because this script itself lives
-// under a throwaway os.tmpdir() directory with no node_modules of its own;
-// resolving bare specifiers from *within* node_modules/vite (which does have
-// access to the repo's hoisted node_modules) sidesteps that entirely.
+// uses), pointed at a throwaway copy of this repo's vite.config.ts/
+// svelte.config.js (see buildIsolatedAppCopy below), bound to a caller-chosen
+// port. Importing 'vite' by its resolved entry file (rather than a bare
+// `import 'vite'`) is required because this script itself lives under a
+// throwaway os.tmpdir() directory with no node_modules of its own; resolving
+// bare specifiers from *within* node_modules/vite (reached through the
+// junction-linked node_modules, which does have access to the repo's hoisted
+// dependencies) sidesteps that entirely.
 const HARNESS_SOURCE = `
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -73,6 +78,11 @@ const { createServer } = await import(viteEntry);
 const server = await createServer({
 	root: rootDir,
 	configFile: path.join(rootDir, 'vite.config.ts'),
+	// node_modules under rootDir is a junction to the real repo's node_modules
+	// (see buildIsolatedAppCopy), so Vite's default node_modules/.vite cache
+	// location would resolve straight back into the shared checkout; pointing
+	// cacheDir outside of node_modules keeps every write inside this temp copy.
+	cacheDir: path.join(rootDir, '.vite-cache'),
 	server: { port, host: '127.0.0.1', strictPort: true },
 	logLevel: 'error'
 });
@@ -98,6 +108,36 @@ function runMigrate(databasePath) {
 	}
 }
 
+/**
+ * Files/directories the SvelteKit dev server needs to actually run the app,
+ * copied verbatim; node_modules is linked in rather than copied (there is no
+ * portable, dependency-free way to re-run `npm install` here, and CLAUDE.md
+ * requires isolated tests never to depend on a network install anyway).
+ */
+const APP_COPY_FILES = ['package.json', 'svelte.config.js', 'vite.config.ts', 'tsconfig.json'];
+const APP_COPY_DIRS = ['src', 'static'];
+
+/**
+ * Materialize a throwaway copy of the project that Vite can be pointed at
+ * instead of this repo checkout, so the dev server's own cache/build state
+ * (node_modules/.vite, .svelte-kit) is written into a temp directory rather
+ * than the shared working tree. node_modules is brought in via
+ * fs.symlinkSync(..., 'junction') -- a directory junction needs no elevated
+ * privileges on Windows (unlike a regular directory symlink) and the 'junction'
+ * type argument is simply ignored on POSIX, so this is portable everywhere.
+ */
+function buildIsolatedAppCopy() {
+	const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'distil-app-copy-'));
+	for (const file of APP_COPY_FILES) {
+		fs.cpSync(path.join(ROOT, file), path.join(appDir, file));
+	}
+	for (const dir of APP_COPY_DIRS) {
+		fs.cpSync(path.join(ROOT, dir), path.join(appDir, dir), { recursive: true });
+	}
+	fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(appDir, 'node_modules'), 'junction');
+	return appDir;
+}
+
 /** Ask the OS for a free TCP port by briefly binding to port 0, then release it. */
 function getEphemeralPort() {
 	return new Promise((resolve, reject) => {
@@ -118,12 +158,13 @@ function getEphemeralPort() {
  */
 async function startApp(env) {
 	const port = await getEphemeralPort();
+	const appDir = buildIsolatedAppCopy();
 	const harnessDir = fs.mkdtempSync(path.join(os.tmpdir(), 'distil-web-harness-'));
 	const harnessPath = path.join(harnessDir, 'web-harness.mjs');
 	fs.writeFileSync(harnessPath, HARNESS_SOURCE, 'utf8');
 
-	const child = spawn(process.execPath, [TSX_CLI, harnessPath, ROOT, String(port)], {
-		cwd: ROOT,
+	const child = spawn(process.execPath, [TSX_CLI, harnessPath, appDir, String(port)], {
+		cwd: appDir,
 		env: { ...process.env, ...env },
 		stdio: ['ignore', 'pipe', 'pipe']
 	});
@@ -212,6 +253,11 @@ async function startApp(env) {
 			child.stdout?.destroy();
 			child.stderr?.destroy();
 			fs.rmSync(harnessDir, { recursive: true, force: true });
+			// The node_modules entry is a junction to the real node_modules, not a
+			// copy: rm it non-recursively first so `recursive: true` below never
+			// walks into (and never risks touching) the shared dependency tree.
+			fs.rmSync(path.join(appDir, 'node_modules'), { force: true });
+			fs.rmSync(appDir, { recursive: true, force: true });
 		}
 	};
 }
