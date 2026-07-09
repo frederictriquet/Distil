@@ -175,22 +175,23 @@ describe('server-side session revocation on logout (auth-session-security)', () 
 		);
 	});
 
-	test('hooks.server.ts revokes the presented session before clearing the logout cookie', () => {
-		const hooks = readText('src/hooks.server.ts');
+	test('the dedicated /logout route revokes the presented session before clearing the cookie', () => {
+		// Logout moved from a bespoke hooks.server.ts interception to a dedicated
+		// /logout endpoint (sveltekit-action-contract), but it must still revoke
+		// the session server-side before clearing the cookie.
+		const logout = readText('src/routes/logout/+server.ts');
 		assert.match(
-			hooks,
+			logout,
 			/import\s*\{[^}]*revokeSessionsIssuedBefore[^}]*\}\s*from\s*['"]\$lib\/server\/session-revocation['"]/,
-			'expected hooks.server.ts to import revokeSessionsIssuedBefore from the revocation module'
+			'expected the logout route to import revokeSessionsIssuedBefore from the revocation module'
 		);
-		const logoutBlockStart = hooks.indexOf('isLogoutRequest');
-		const revokeCallIndex = hooks.indexOf('revokeSessionsIssuedBefore(', logoutBlockStart);
-		const cookieClearIndex = hooks.indexOf('serializeClearedSessionCookie(', logoutBlockStart);
-		assert.ok(logoutBlockStart !== -1, 'expected a logout request branch in hooks.server.ts');
-		assert.ok(revokeCallIndex !== -1, 'expected the logout branch to call revokeSessionsIssuedBefore(...)');
-		assert.ok(cookieClearIndex !== -1, 'expected the logout branch to clear the session cookie');
+		const revokeCallIndex = logout.indexOf('revokeSessionsIssuedBefore(');
+		const cookieClearIndex = logout.indexOf('cookies.delete(');
+		assert.ok(revokeCallIndex !== -1, 'expected the logout route to call revokeSessionsIssuedBefore(...)');
+		assert.ok(cookieClearIndex !== -1, 'expected the logout route to clear the session cookie');
 		assert.ok(
 			revokeCallIndex < cookieClearIndex,
-			'the token must be revoked server-side before (or as part of) sending the cookie-clearing response'
+			'the token must be revoked server-side before the cookie is cleared'
 		);
 	});
 

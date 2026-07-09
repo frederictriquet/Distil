@@ -12,10 +12,15 @@
 /** Default landing path when no valid `redirectTo` is supplied. */
 export const DEFAULT_REDIRECT = '/';
 
-// Backslash or ASCII control character (NUL..US); either can smuggle in
-// URL/header-parsing surprises, so a path containing one is rejected.
+// Reject anything outside printable ASCII (0x20..0x7E), plus the backslash.
+// Control characters can smuggle in URL/header-parsing surprises, and any code
+// point above 0x7E (e.g. a non-Latin-1 character such as "中") makes the
+// `Location` header throw a "Cannot convert argument to a ByteString" error
+// when the redirect is issued, turning a crafted `redirectTo` into a 500.
+// Internal paths are percent-encoded, so they never legitimately carry raw
+// non-ASCII bytes.
 // eslint-disable-next-line no-control-regex
-const UNSAFE_PATH_CHAR = /[\\\x00-\x1f]/;
+const UNSAFE_PATH_CHAR = /[^\x20-\x7e]|\\/;
 
 /**
  * Validate a `redirectTo` value as an internal, same-origin path.

@@ -91,6 +91,16 @@ describe('safeRedirectPath open-redirect validation', () => {
 		assert.equal(results[1], fallback);
 	});
 
+	test('a non-Latin-1 character in the path is rejected (falls back to "/")', () => {
+		// A code point above 0x7E (e.g. U+4E2D) makes the Location header throw a
+		// ByteString conversion error when the redirect is issued, so such a value
+		// must never be returned as-is. Internal paths are percent-encoded, so a
+		// raw non-ASCII byte is always illegitimate here.
+		const { default: fallback, results } = runSafeRedirectPath(['/kb中', '/café']);
+		assert.equal(results[0], fallback);
+		assert.equal(results[1], fallback);
+	});
+
 	test('a clean same-origin path (with query) is returned unchanged', () => {
 		const { results } = runSafeRedirectPath(['/kb?tab=active']);
 		assert.equal(results[0], '/kb?tab=active');
