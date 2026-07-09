@@ -174,7 +174,7 @@ describe('the built standalone Node server (shared install/build fixture)', () =
 		});
 
 		try {
-			const statusCode = await new Promise((resolve, reject) => {
+			const response = await new Promise((resolve, reject) => {
 				const start = Date.now();
 				const retryOrFail = (cause) => {
 					if (spawnError) {
@@ -194,7 +194,7 @@ describe('the built standalone Node server (shared install/build fixture)', () =
 					}
 					const req = http.get({ host: '127.0.0.1', port, path: '/', timeout: 1000 }, (res) => {
 						res.resume();
-						resolve(res.statusCode);
+						resolve({ statusCode: res.statusCode, location: res.headers.location });
 					});
 					// A socket timeout does not abort the request on its own; without
 					// destroying it here the request would hang and the test would
@@ -209,7 +209,13 @@ describe('the built standalone Node server (shared install/build fixture)', () =
 				tryConnect();
 			});
 
-			assert.equal(statusCode, 200, 'the standalone server should respond 200 on /');
+			// Since roadmap task 3.3 the access guard protects every non-public
+			// route. This server is spawned without APP_PASSWORD/SESSION_SECRET, so
+			// an unauthenticated GET / is redirected to the login page rather than
+			// served directly — the smoke test just needs a real HTTP response, so
+			// assert the guard's 303 → /login contract.
+			assert.equal(response.statusCode, 303, 'the standalone server should respond to / (guard redirect)');
+			assert.equal(response.location, '/login', 'an unauthenticated / should redirect to /login');
 		} finally {
 			// child.kill() only sends SIGTERM; wait for the process to actually
 			// exit so it can't keep holding the port/files after the test and no

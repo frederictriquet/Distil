@@ -16,8 +16,20 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 /** Name of the session cookie set on successful login. */
 export const SESSION_COOKIE = 'distil_session';
 
-/** Session lifetime, in seconds (30 days). */
+/** Session lifetime, in seconds (30 days). Enforced both as a cookie attribute
+ * (client-side) and server-side against the token's signed issue time. */
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
+
+/**
+ * Minimum length accepted for SESSION_SECRET. A short secret makes the HMAC
+ * feasibly forgeable, so anything shorter is treated as a misconfiguration.
+ */
+export const MIN_SESSION_SECRET_LENGTH = 16;
+
+/** Whether a SESSION_SECRET is present and long enough to be safe to use. */
+export function isUsableSecret(secret: string | undefined): secret is string {
+	return typeof secret === 'string' && secret.length >= MIN_SESSION_SECRET_LENGTH;
+}
 
 /**
  * Compare a submitted password against the expected one in constant time.
@@ -51,10 +63,14 @@ export function createSessionToken(secret: string): string {
 }
 
 /**
- * Verify a session token's signature in constant time.
+ * Verify a session token's signature in constant time and enforce its
+ * server-side lifetime.
  *
- * Returns the decoded payload string when the signature is valid, or `null`
- * when the token is malformed or the signature does not match.
+ * Returns the decoded payload string when the signature is valid AND the token
+ * was issued within SESSION_MAX_AGE, or `null` when the token is malformed, the
+ * signature does not match, or it has expired. Checking the signed `iat` here
+ * (not just the client-controlled cookie Max-Age) means a leaked cookie stops
+ * working once it ages past the window instead of remaining valid forever.
  */
 export function verifySessionToken(token: string, secret: string): string | null {
 	const dot = token.lastIndexOf('.');
@@ -73,6 +89,23 @@ export function verifySessionToken(token: string, secret: string): string | null
 	if (!timingSafeEqual(signatureBuf, expectedBuf)) {
 		return null;
 	}
+
+	// Signature is authentic; now enforce the lifetime encoded in the payload.
+	let decoded: unknown;
+	try {
+		decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+	} catch {
+		return null;
+	}
+	const iat = (decoded as { iat?: unknown })?.iat;
+	if (typeof iat !== 'number' || !Number.isFinite(iat)) {
+		return null;
+	}
+	const age = Date.now() - iat;
+	if (age < 0 || age > SESSION_MAX_AGE * 1000) {
+		return null;
+	}
+
 	return payload;
 }
 
@@ -93,4 +126,18 @@ export function sessionCookieOptions(secure: boolean) {
 		secure,
 		maxAge: SESSION_MAX_AGE
 	};
+}
+
+/**
+ * Serialize a `Set-Cookie` header value that immediately expires the session
+ * cookie (logout). Used where a Response is built by hand rather than through
+ * SvelteKit's `cookies` API; the attributes mirror `sessionCookieOptions` so
+ * the browser matches and removes the same cookie.
+ */
+export function serializeClearedSessionCookie(secure: boolean): string {
+	const parts = [`${SESSION_COOKIE}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0'];
+	if (secure) {
+		parts.push('Secure');
+	}
+	return parts.join('; ');
 }

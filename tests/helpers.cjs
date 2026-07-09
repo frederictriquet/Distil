@@ -144,6 +144,11 @@ function hashEntryInto(hash, absPath, relPath) {
 function projectFixtureHash() {
 	const hash = crypto.createHash('sha1');
 	hash.update(`\0root\0${ROOT}`);
+	// Fold in the Node ABI so a fixture built under one Node is never reused
+	// under another: better-sqlite3 is compiled natively during install, and a
+	// NODE_MODULE_VERSION mismatch would otherwise make the smoke tests fail
+	// spuriously when `npm test` runs on a different Node than the fixture.
+	hash.update(`\0nodeabi\0${process.versions.modules}\0${process.version}`);
 	for (const entry of PROJECT_ENTRIES) {
 		hashEntryInto(hash, path.join(ROOT, entry), entry);
 	}
