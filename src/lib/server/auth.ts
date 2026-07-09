@@ -26,9 +26,29 @@ export const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
  */
 export const MIN_SESSION_SECRET_LENGTH = 16;
 
-/** Whether a SESSION_SECRET is present and long enough to be safe to use. */
+/**
+ * Known-placeholder guard for SESSION_SECRET. A value that ships in the
+ * template (e.g. `change-me-to-a-long-random-string`) is long enough to pass
+ * the length check yet gives no real security, so it is rejected explicitly.
+ * The word separators are matched as an optional base64url character
+ * (`-` or `_`) so placeholders written in either style — and the base64url
+ * character set a real generated secret uses — are still caught. Anchored to
+ * word starts / non-base64url boundaries to avoid matching those fragments
+ * inside a genuine random secret.
+ */
+export const PLACEHOLDER_SECRET_PATTERN =
+	/(^|[^A-Za-z0-9_-])(change[-_]?me|placeholder|example|to[-_]?a[-_]?long[-_]?random)/i;
+
+/**
+ * Whether a SESSION_SECRET is present, long enough, and not a known
+ * placeholder, i.e. safe to use for signing sessions.
+ */
 export function isUsableSecret(secret: string | undefined): secret is string {
-	return typeof secret === 'string' && secret.length >= MIN_SESSION_SECRET_LENGTH;
+	return (
+		typeof secret === 'string' &&
+		secret.length >= MIN_SESSION_SECRET_LENGTH &&
+		!PLACEHOLDER_SECRET_PATTERN.test(secret)
+	);
 }
 
 /**
@@ -112,6 +132,31 @@ export function verifySessionToken(token: string, secret: string): string | null
 /** Whether a cookie value carries a valid, correctly-signed session. */
 export function isValidSession(token: string | undefined, secret: string): boolean {
 	return typeof token === 'string' && verifySessionToken(token, secret) !== null;
+}
+
+/**
+ * Return the signed issue time (`iat`, ms epoch) of a valid, unexpired token,
+ * or `null` when the token is missing, malformed, unsigned, or expired.
+ *
+ * The auth guard uses this to enforce server-side revocation: a token is only
+ * accepted when it authenticates here AND was issued after the revocation
+ * epoch, so a logout can invalidate an otherwise still-valid stateless token.
+ */
+export function getSessionIssuedAt(token: string | undefined, secret: string): number | null {
+	if (typeof token !== 'string') {
+		return null;
+	}
+	const payload = verifySessionToken(token, secret);
+	if (payload === null) {
+		return null;
+	}
+	try {
+		const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+		const iat = (decoded as { iat?: unknown })?.iat;
+		return typeof iat === 'number' && Number.isFinite(iat) ? iat : null;
+	} catch {
+		return null;
+	}
 }
 
 /**
