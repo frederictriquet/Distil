@@ -5,9 +5,15 @@
 //     documented EBUSY/EPERM Windows case) must not abort the operation —
 //     the KB row is still removed and no error is thrown — while a genuinely
 //     unexpected fs error must NOT be silently swallowed.
-//   - the shared better-sqlite3 connection is closed on process shutdown
-//     (SIGINT/SIGTERM) so the WAL gets checkpointed, the registration is
-//     idempotent (no duplicate listeners), and closeDb() is safe to call
+//   - the shared better-sqlite3 connection is closed once the process
+//     actually exits (the portable `process.on('exit', ...)` hook), so the
+//     WAL gets checkpointed whenever something else — in production,
+//     @sveltejs/adapter-node's own SIGINT/SIGTERM handling, which drains
+//     in-flight requests before calling process.exit() itself — lets the
+//     process terminate; receiving SIGINT/SIGTERM must NOT itself force an
+//     immediate exit, since that would race and abort that graceful drain;
+//     the registration is idempotent (no duplicate listeners, and no extra
+//     SIGINT/SIGTERM listeners of its own); and closeDb() is safe to call
 //     more than once.
 //   - a SQLite UNIQUE-constraint violation on creating a duplicate knowledge
 //     base (same repoUrl + branch) is recognised as a duplicate and mapped
@@ -165,8 +171,12 @@ process.stdout.write(JSON.stringify(await run()));
 // Standalone (non-dispatch) harness for the process-shutdown tests: it
 // registers the shutdown hooks, opens the lazy `db` singleton and performs
 // one write (so a WAL file actually exists to be checkpointed), then prints a
-// READY marker and idles so the parent test can deliver a signal at a known
-// point instead of racing process startup.
+// READY marker and idles so the parent test can act at a known point instead
+// of racing process startup. Writing "EXIT\n" to its stdin makes it call
+// process.exit(0) itself — standing in for @sveltejs/adapter-node calling
+// process.exit() once its own graceful drain (triggered by the signal it
+// caught) has finished, which is the only thing that should make this
+// process actually terminate.
 const SHUTDOWN_HARNESS_SOURCE = `
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -183,6 +193,13 @@ kb.createKnowledgeBase(dbMod.db, {
 	repoUrl: 'https://example.test/shutdown-probe.git',
 	branch: 'main',
 	contentSubdir: ''
+});
+
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => {
+	if (chunk.includes('EXIT')) {
+		process.exit(0);
+	}
 });
 
 process.stdout.write('READY\\n');
@@ -245,12 +262,13 @@ function runAction(databasePath, action, payload) {
 }
 
 /**
- * Spawn the shutdown harness (which registers the real shutdown hooks) against
- * `databasePath`, wait for its READY marker, then deliver `signal`, and
- * resolve with how the process actually terminated. A guard timeout rejects
- * instead of hanging the suite if the process never exits.
+ * Spawn the shutdown harness against `databasePath`, wait for its READY
+ * marker, then write "EXIT\n" to its stdin so it calls process.exit(0)
+ * itself — standing in for adapter-node's own eventual exit once its
+ * graceful drain completes — and resolve with how the process terminated.
+ * A guard timeout rejects instead of hanging the suite if it never exits.
  */
-function runShutdownHarness(databasePath, signal) {
+function runShutdownHarnessUntilExit(databasePath) {
 	return new Promise((resolve, reject) => {
 		const child = spawn(process.execPath, [TSX_CLI, shutdownHarnessPath, ROOT], {
 			cwd: ROOT,
@@ -259,17 +277,17 @@ function runShutdownHarness(databasePath, signal) {
 
 		let stdout = '';
 		let stderr = '';
-		let ready = false;
+		let exitRequested = false;
 		const guard = setTimeout(() => {
 			child.kill('SIGKILL');
-			reject(new Error(`shutdown harness did not exit in time.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+			reject(new Error(`shutdown harness did not exit after requesting EXIT.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
 		}, 10 * 1000);
 
 		child.stdout.on('data', (chunk) => {
 			stdout += chunk.toString();
-			if (!ready && stdout.includes('READY')) {
-				ready = true;
-				child.kill(signal);
+			if (!exitRequested && stdout.includes('READY')) {
+				exitRequested = true;
+				child.stdin.write('EXIT\n');
 			}
 		});
 		child.stderr.on('data', (chunk) => {
@@ -279,9 +297,72 @@ function runShutdownHarness(databasePath, signal) {
 			clearTimeout(guard);
 			reject(error);
 		});
-		child.on('exit', (code, receivedSignal) => {
+		child.on('exit', (code, signal) => {
 			clearTimeout(guard);
-			resolve({ code, signal: receivedSignal, stdout, stderr });
+			resolve({ code, signal, stdout, stderr });
+		});
+	});
+}
+
+/**
+ * Spawn the shutdown harness against `databasePath`, wait for its READY
+ * marker, then deliver `signal` and confirm the process does NOT terminate
+ * on its own: registerDbShutdownHooks() must not force an immediate exit on
+ * SIGINT/SIGTERM, since in production that would race and abort
+ * adapter-node's own graceful drain of in-flight requests. The child is
+ * force-killed afterwards purely as test cleanup, not as an assertion.
+ */
+function runShutdownHarnessSignalMustNotExit(databasePath, signal) {
+	return new Promise((resolve, reject) => {
+		const child = spawn(process.execPath, [TSX_CLI, shutdownHarnessPath, ROOT], {
+			cwd: ROOT,
+			env: { ...process.env, DATABASE_PATH: databasePath }
+		});
+
+		let stdout = '';
+		let stderr = '';
+		let signalSent = false;
+		let settled = false;
+
+		const guard = setTimeout(() => {
+			if (settled) return;
+			settled = true;
+			child.kill('SIGKILL');
+			reject(new Error(`shutdown harness never became ready.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+		}, 10 * 1000);
+
+		child.stdout.on('data', (chunk) => {
+			stdout += chunk.toString();
+			if (!signalSent && stdout.includes('READY')) {
+				signalSent = true;
+				child.kill(signal);
+				setTimeout(() => {
+					if (settled) return;
+					settled = true;
+					clearTimeout(guard);
+					child.kill('SIGKILL');
+					resolve({ stayedAlive: true, stdout, stderr });
+				}, 500);
+			}
+		});
+		child.stderr.on('data', (chunk) => {
+			stderr += chunk.toString();
+		});
+		child.on('error', (error) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(guard);
+			reject(error);
+		});
+		child.on('exit', (code, receivedSignal) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(guard);
+			reject(
+				new Error(
+					`the process exited (code=${code}, signal=${receivedSignal}) in reaction to ${signal} instead of staying alive for a graceful drain.\nstdout:\n${stdout}\nstderr:\n${stderr}`
+				)
+			);
 		});
 	});
 }
@@ -458,32 +539,71 @@ describe('the SQLite connection is closed on process shutdown', () => {
 		if (workDir) fs.rmSync(workDir, { recursive: true, force: true });
 	});
 
-	test('registerDbShutdownHooks() closes the connection and checkpoints the WAL on SIGTERM', async () => {
-		const dbPath = path.join(workDir, 'hooked-sigterm.db');
+	test('the exit hook checkpoints the WAL once the process actually exits (e.g. after adapter-node\'s graceful drain calls process.exit())', async () => {
+		const dbPath = path.join(workDir, 'hooked-exit.db');
 		runMigrate(dbPath);
 
-		const outcome = await runShutdownHarness(dbPath, 'SIGTERM');
-		assert.equal(outcome.code, 0, 'the SIGTERM handler should close the db and exit cleanly with code 0');
+		const outcome = await runShutdownHarnessUntilExit(dbPath);
+		assert.equal(outcome.code, 0, 'requesting a clean exit should let the process close the db and exit with code 0');
 		assert.ok(!fs.existsSync(`${dbPath}-wal`), 'closing the connection must checkpoint and remove the WAL file');
 	});
 
-	test('registerDbShutdownHooks() closes the connection and checkpoints the WAL on SIGINT', async () => {
-		const dbPath = path.join(workDir, 'hooked-sigint.db');
-		runMigrate(dbPath);
+	test(
+		'receiving SIGTERM must not itself terminate the process',
+		{
+			skip:
+				process.platform === 'win32' &&
+				"sending POSIX signals via child.kill() unconditionally terminates the target process on Windows, so this process-survival assertion cannot be exercised there"
+		},
+		async () => {
+			const dbPath = path.join(workDir, 'sigterm-survives.db');
+			runMigrate(dbPath);
 
-		const outcome = await runShutdownHarness(dbPath, 'SIGINT');
-		assert.equal(outcome.code, 0, 'the SIGINT handler should close the db and exit cleanly with code 0');
-		assert.ok(!fs.existsSync(`${dbPath}-wal`), 'closing the connection must checkpoint and remove the WAL file');
-	});
+			const outcome = await runShutdownHarnessSignalMustNotExit(dbPath, 'SIGTERM');
+			assert.equal(
+				outcome.stayedAlive,
+				true,
+				'registerDbShutdownHooks() must not force an immediate exit on SIGTERM: adapter-node owns graceful SIGTERM handling (draining in-flight requests) and calls process.exit() itself once done, which is what should trigger the checkpoint'
+			);
+		}
+	);
 
-	test('registerDbShutdownHooks() is idempotent: calling it twice registers each listener only once', () => {
+	test(
+		'receiving SIGINT must not itself terminate the process',
+		{
+			skip:
+				process.platform === 'win32' &&
+				"sending POSIX signals via child.kill() unconditionally terminates the target process on Windows, so this process-survival assertion cannot be exercised there"
+		},
+		async () => {
+			const dbPath = path.join(workDir, 'sigint-survives.db');
+			runMigrate(dbPath);
+
+			const outcome = await runShutdownHarnessSignalMustNotExit(dbPath, 'SIGINT');
+			assert.equal(
+				outcome.stayedAlive,
+				true,
+				'registerDbShutdownHooks() must not force an immediate exit on SIGINT, for the same reason as SIGTERM'
+			);
+		}
+	);
+
+	test('registerDbShutdownHooks() is idempotent and registers only the portable exit hook, not its own SIGINT/SIGTERM listeners', () => {
 		const dbPath = path.join(workDir, 'idempotent.db');
 		runMigrate(dbPath);
 
 		const { before: countsBefore, after: countsAfter } = runMain(dbPath, 'listenerCounts', {});
-		assert.equal(countsAfter.sigterm, countsBefore.sigterm + 1, 'exactly one SIGTERM listener should be added, not two');
-		assert.equal(countsAfter.sigint, countsBefore.sigint + 1, 'exactly one SIGINT listener should be added, not two');
 		assert.equal(countsAfter.exit, countsBefore.exit + 1, 'exactly one exit listener should be added, not two');
+		assert.equal(
+			countsAfter.sigterm,
+			countsBefore.sigterm,
+			'registerDbShutdownHooks() must not add its own SIGTERM listener — adapter-node already owns graceful SIGTERM handling and forcing exit here would abort its drain'
+		);
+		assert.equal(
+			countsAfter.sigint,
+			countsBefore.sigint,
+			'registerDbShutdownHooks() must not add its own SIGINT listener, for the same reason as SIGTERM'
+		);
 	});
 
 	test('closeDb() is safe to call more than once, including before any connection was ever opened', () => {
