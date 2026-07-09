@@ -26,7 +26,7 @@
 			<p class="error" role="alert">{form.error}</p>
 		{/if}
 
-		<button type="submit">Log in</button>
+		<button type="submit" class="primary">Log in</button>
 	</form>
 </main>
 
@@ -34,19 +34,20 @@
 	.login {
 		max-width: 20rem;
 		margin: 4rem auto;
+		padding: var(--space-4);
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+		gap: var(--space-4);
 	}
 
 	form {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: var(--space-2);
 	}
 
 	.error {
-		color: #b00020;
+		color: var(--color-danger);
 		margin: 0;
 	}
 </style>
