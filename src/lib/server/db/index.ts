@@ -10,12 +10,46 @@
 // migration tooling and tests, which control when/where the file is created).
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { existsSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { resolveDatabasePath } from './config';
 import * as schema from './schema';
 
 export { schema };
+
+// Folder holding the generated drizzle migrations (0000_*.sql + meta/). It sits
+// at the project root and is resolved from the working directory, matching how
+// the standalone `npm run db:migrate` (drizzle-kit) locates it.
+const MIGRATIONS_FOLDER = join(process.cwd(), 'drizzle');
+
+/**
+ * Apply any pending drizzle migrations to the given database.
+ *
+ * This is idempotent: drizzle records applied migrations in its own bookkeeping
+ * table, so re-running it against an already-migrated database is a no-op. It is
+ * what guarantees the schema exists on a fresh database (e.g. a dev or freshly
+ * deployed environment where `data/distil.db` is created on the fly), so the
+ * first query against a table like `cards` no longer fails with "no such table".
+ *
+ * If the migrations folder is absent from the working directory (e.g. a runtime
+ * whose database schema is already provisioned out of band and that ships
+ * without the `drizzle/` sources), there is nothing to apply: skip rather than
+ * fail, since drizzle's migrator would otherwise throw on the missing folder.
+ */
+export function runMigrations(database: ReturnType<typeof createDb>): void {
+	if (!existsSync(MIGRATIONS_FOLDER)) {
+		// Log rather than skip silently: if the schema was NOT provisioned out of
+		// band, the app will reproduce the original "no such table" 500 and this
+		// line is the only clue that migrations were deliberately not applied.
+		console.warn(
+			`[db] migrations folder not found at ${MIGRATIONS_FOLDER}; skipping automatic migrations. ` +
+				'The database schema must already be provisioned out of band, otherwise queries will fail with "no such table".'
+		);
+		return;
+	}
+	migrate(database, { migrationsFolder: MIGRATIONS_FOLDER });
+}
 
 /** Open a better-sqlite3 connection with the recommended pragmas applied. */
 export function createSqliteConnection(databasePath: string): Database.Database {
@@ -41,8 +75,29 @@ let database: ReturnType<typeof createDb> | undefined;
 export const db = new Proxy({} as ReturnType<typeof createDb>, {
 	get(_target, prop, receiver) {
 		if (!database) {
-			connection = createSqliteConnection(resolveDatabasePath());
-			database = createDb(connection);
+			// Ensure the schema is in place before the first query. Opening the
+			// connection stays lazy (this only runs on first real use, never at
+			// import time), so the migration tooling and tests that build their
+			// own connection via createDb() are unaffected.
+			//
+			// Migrate into local variables and only publish them to the shared
+			// singleton once runMigrations() succeeds. If it throws (a partial or
+			// failed migration, disk full, SQLITE_BUSY from a concurrent process on
+			// the same fresh file...), leaving a truthy-but-unmigrated `database`
+			// behind would make every later access skip this init, never retry the
+			// migration, and silently return to "no such table" errors until the
+			// process restarts. Instead we close the half-open connection and
+			// rethrow so the next access retries from scratch.
+			const nextConnection = createSqliteConnection(resolveDatabasePath());
+			const nextDatabase = createDb(nextConnection);
+			try {
+				runMigrations(nextDatabase);
+			} catch (err) {
+				nextConnection.close();
+				throw err;
+			}
+			connection = nextConnection;
+			database = nextDatabase;
 		}
 		return Reflect.get(database, prop, receiver);
 	}
