@@ -169,12 +169,16 @@ const payload = JSON.parse(payloadJson || '{}');
 
 const dbIndexUrl = pathToFileURL(path.join(rootDir, 'src', 'lib', 'server', 'db', 'index.ts')).href;
 const syncUrl = pathToFileURL(path.join(rootDir, 'src', 'lib', 'server', 'sync.ts')).href;
+const kbUrl = pathToFileURL(path.join(rootDir, 'src', 'lib', 'server', 'kb.ts')).href;
 
 const { createSqliteConnection, createDb } = await import(dbIndexUrl);
 const sync = await import(syncUrl);
+const kb = await import(kbUrl);
 
 async function run() {
 	switch (action) {
+		case 'parseKnowledgeBaseInput':
+			return kb.parseKnowledgeBaseInput(payload);
 		case 'cloneOrUpdate': {
 			try {
 				const repoDir = await sync.cloneOrUpdateRepo(payload.kb, payload.cacheBaseDir);
@@ -321,6 +325,77 @@ describe('cloning and updating a KB repo from a local git fixture (task 6.1)', (
 		const result = runSync('unused.db', 'cloneOrUpdate', { kb: badKb, cacheBaseDir });
 		assert.equal(result.ok, false);
 		assert.ok(result.message && result.message.length > 0, 'expected a non-empty error message');
+	});
+});
+
+// --- Boundary validation for branch/contentSubdir (hardens 6.1's git args and
+// --- 6.2's directory walk against injection/traversal) ---------------------
+//
+// `cloneOrUpdateRepo` (6.1) passes `kb.branch` positionally to `simple-git`'s
+// `clone`/`fetch`, and `parseCards` (6.2) joins `contentSubdir` onto the local
+// checkout path before walking it. `parseKnowledgeBaseInput` is the only gate
+// in front of both, so its rejection paths for these two fields must be
+// exercised here, alongside `src/lib/server/kb.ts`'s own `name`/`repoUrl`
+// checks already covered by tests/kb-management.test.cjs.
+describe('validating branch and contentSubdir at the KB-creation boundary (hardens 6.1/6.2 against injection and traversal)', () => {
+	function parse(payload) {
+		return runSync('unused.db', 'parseKnowledgeBaseInput', payload);
+	}
+
+	const validBase = { name: 'My KB', repoUrl: 'https://example.test/repo.git' };
+
+	test('rejects a branch shaped like a git option (leading "--"), blocking argument injection into clone/fetch', () => {
+		const result = parse({ ...validBase, branch: '--upload-pack=/tmp/evil', contentSubdir: '' });
+		assert.equal(result.ok, false);
+		assert.ok(result.errors.branch, 'expected a branch validation error');
+	});
+
+	test('rejects a branch starting with a single dash', () => {
+		const result = parse({ ...validBase, branch: '-x', contentSubdir: '' });
+		assert.equal(result.ok, false);
+		assert.ok(result.errors.branch);
+	});
+
+	test('rejects a branch containing ".." even if otherwise word-shaped', () => {
+		const result = parse({ ...validBase, branch: 'feature/a..b', contentSubdir: '' });
+		assert.equal(result.ok, false);
+		assert.ok(result.errors.branch);
+	});
+
+	test('accepts real-world branch names with slashes and dots', () => {
+		const result = parse({ ...validBase, branch: 'feature/x.y-2', contentSubdir: '' });
+		assert.equal(result.ok, true);
+		assert.equal(result.value.branch, 'feature/x.y-2');
+	});
+
+	test('rejects a contentSubdir attempting path traversal ("../../etc")', () => {
+		const result = parse({ ...validBase, branch: '', contentSubdir: '../../etc' });
+		assert.equal(result.ok, false);
+		assert.ok(result.errors.contentSubdir, 'expected a contentSubdir validation error');
+	});
+
+	test('rejects a contentSubdir with a traversal segment buried in an otherwise plausible path', () => {
+		const result = parse({ ...validBase, branch: '', contentSubdir: 'content/../../../etc' });
+		assert.equal(result.ok, false);
+		assert.ok(result.errors.contentSubdir);
+	});
+
+	test('rejects an absolute contentSubdir path', () => {
+		const result = parse({ ...validBase, branch: '', contentSubdir: '/etc/passwd' });
+		assert.equal(result.ok, false);
+		assert.ok(result.errors.contentSubdir);
+	});
+
+	test('rejects a contentSubdir segment that looks like a flag', () => {
+		const result = parse({ ...validBase, branch: '', contentSubdir: 'content/-rf' });
+		assert.equal(result.ok, false);
+		assert.ok(result.errors.contentSubdir);
+	});
+
+	test('accepts a real nested contentSubdir', () => {
+		const result = parse({ ...validBase, branch: '', contentSubdir: 'docs/cards' });
+		assert.equal(result.ok, true);
+		assert.equal(result.value.contentSubdir, 'docs/cards');
 	});
 });
 
