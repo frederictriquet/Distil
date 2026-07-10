@@ -39,6 +39,13 @@ const MIGRATIONS_FOLDER = join(process.cwd(), 'drizzle');
  */
 export function runMigrations(database: ReturnType<typeof createDb>): void {
 	if (!existsSync(MIGRATIONS_FOLDER)) {
+		// Log rather than skip silently: if the schema was NOT provisioned out of
+		// band, the app will reproduce the original "no such table" 500 and this
+		// line is the only clue that migrations were deliberately not applied.
+		console.warn(
+			`[db] migrations folder not found at ${MIGRATIONS_FOLDER}; skipping automatic migrations. ` +
+				'The database schema must already be provisioned out of band, otherwise queries will fail with "no such table".'
+		);
 		return;
 	}
 	migrate(database, { migrationsFolder: MIGRATIONS_FOLDER });
@@ -68,13 +75,29 @@ let database: ReturnType<typeof createDb> | undefined;
 export const db = new Proxy({} as ReturnType<typeof createDb>, {
 	get(_target, prop, receiver) {
 		if (!database) {
-			connection = createSqliteConnection(resolveDatabasePath());
-			database = createDb(connection);
 			// Ensure the schema is in place before the first query. Opening the
 			// connection stays lazy (this only runs on first real use, never at
 			// import time), so the migration tooling and tests that build their
 			// own connection via createDb() are unaffected.
-			runMigrations(database);
+			//
+			// Migrate into local variables and only publish them to the shared
+			// singleton once runMigrations() succeeds. If it throws (a partial or
+			// failed migration, disk full, SQLITE_BUSY from a concurrent process on
+			// the same fresh file...), leaving a truthy-but-unmigrated `database`
+			// behind would make every later access skip this init, never retry the
+			// migration, and silently return to "no such table" errors until the
+			// process restarts. Instead we close the half-open connection and
+			// rethrow so the next access retries from scratch.
+			const nextConnection = createSqliteConnection(resolveDatabasePath());
+			const nextDatabase = createDb(nextConnection);
+			try {
+				runMigrations(nextDatabase);
+			} catch (err) {
+				nextConnection.close();
+				throw err;
+			}
+			connection = nextConnection;
+			database = nextDatabase;
 		}
 		return Reflect.get(database, prop, receiver);
 	}
