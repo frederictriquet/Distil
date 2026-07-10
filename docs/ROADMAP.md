@@ -57,7 +57,7 @@ Ces bases transverses sont établies avant les pages pour que chacune en hérite
 - [x] **9.3** Créer la page listant les bookmarks groupés par catégorie, avec retrait d'un bookmark et navigation vers la fiche.
 
 ## 10. Consultation d'une fiche précise
-- [ ] **10.1** Créer la page affichant une fiche identifiée (cible des liens internes et de la navigation depuis les bookmarks).
+- [x] **10.1** Créer la page affichant une fiche identifiée (cible des liens internes et de la navigation depuis les bookmarks).
 
 ## 11. Recherche, liste et navigation dans les fiches
 - [ ] **11.1** Créer la page listant les fiches (fiches actives des KB en focus) avec titre, thème et source.
