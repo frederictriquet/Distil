@@ -393,7 +393,12 @@ describe('a card is addressable by numeric id at /cards/<id> (task 10.1, bookmar
 		assert.equal(res.status, 404);
 	});
 
-	for (const badId of ['abc', '0', '-1', '1.5', '1e3', '']) {
+	// An empty id segment (`/cards/`) is not tested here: since the cards index
+	// now lives at /cards (roadmap section 11), a trailing-slash request resolves
+	// to that list page rather than to this `[id]` route, which is the intended
+	// coexistence of /cards and /cards/<id>. Structurally invalid ids below still
+	// reach the `[id]` route and must answer a real 404.
+	for (const badId of ['abc', '0', '-1', '1.5', '1e3']) {
 		test(`GET /cards/${JSON.stringify(badId)} (structurally invalid id) answers 404, not a crash`, async () => {
 			const res = await fetch(`${app.baseUrl}/cards/${encodeURIComponent(badId)}`, {
 				redirect: 'manual',

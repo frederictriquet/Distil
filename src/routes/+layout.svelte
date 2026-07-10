@@ -11,6 +11,7 @@
 	// so navigation never breaks.
 	const navItems = [
 		{ href: '/', label: 'Study' },
+		{ href: '/cards', label: 'Cards' },
 		{ href: '/kb', label: 'Knowledge bases' },
 		{ href: '/bookmarks', label: 'Bookmarks' }
 	];
