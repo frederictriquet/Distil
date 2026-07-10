@@ -1,11 +1,32 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { afterNavigate } from '$app/navigation';
 	import PageContainer from '$lib/components/PageContainer.svelte';
 	import Card from '$lib/components/Card.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// Record the reading only once a card is genuinely presented to the user.
+	// `afterNavigate` runs when this component mounts and after every subsequent
+	// navigation to `/` (e.g. the "Next card"/"more"/"less" POST-redirect-GET),
+	// but never during a SvelteKit preload — a preload runs the server `load`
+	// without mounting the component. So exactly one reading is recorded per card
+	// actually shown, and preloads/back-forward-without-view record nothing. The
+	// server (src/routes/readings/+server.ts) records the draw; drawing itself
+	// stays in `load`. Recording is best-effort: a failure must not break the view.
+	afterNavigate(() => {
+		const card = data.card;
+		if (!card) return;
+		void fetch('/readings', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ cardId: card.id })
+		}).catch(() => {
+			// Ignore network/record failures; the drawn card is still shown.
+		});
+	});
 </script>
 
 <svelte:head>

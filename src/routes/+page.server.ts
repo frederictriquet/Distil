@@ -1,24 +1,30 @@
 // Study view server logic (roadmap section 8: weighted draw + study view).
 //
 // `load` draws one card from the eligible pool weighted by theme (8.1) and
-// records the reading (8.2) so the recency exclusion works and history is
-// preserved; it returns the card fields the view renders (8.3). The form
-// actions draw the next card (8.4) and adjust the current card's theme weight
-// up/down (8.5). This route sits behind the access guard in hooks.server.ts, so
-// it is only reachable with a valid session.
+// returns the card fields the view renders (8.3). It deliberately does NOT
+// record the reading (8.2): `load` runs on every GET of `/` — including
+// SvelteKit hover/tap preloads, back/forward navigation, refreshes, and
+// programmatic preloads — none of which necessarily present the card to the
+// user. Recording here logged "phantom" readings that polluted reading_history
+// and skewed the recency exclusion (it could even record a card never shown on
+// screen). Recording is instead driven by an explicit client signal once the
+// card is actually mounted/displayed (see +page.svelte and
+// src/routes/readings/+server.ts), so a preload — which never mounts the
+// component — records nothing. This route sits behind the access guard in
+// hooks.server.ts, so it is only reachable with a valid session.
 //
 // Actions redraw via POST-redirect-GET: they mutate (or simply advance) and
 // then redirect back to `/`, so the subsequent `load` performs a single fresh
-// draw + reading (no double draw) that reflects any weight change and excludes
-// the card just shown. Only named actions are used (no `default`), per the
-// project's SvelteKit action rules.
+// draw (no double draw) that reflects any weight change and excludes the card
+// just shown. Only named actions are used (no `default`), per the project's
+// SvelteKit action rules.
 
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { knowledgeBases } from '$lib/server/db/schema';
-import { adjustThemeWeight, drawCard, recordReading } from '$lib/server/study';
+import { adjustThemeWeight, drawCard } from '$lib/server/study';
 import { renderCardMarkdown } from '$lib/server/markdown';
 
 export const load: PageServerLoad = async () => {
@@ -26,7 +32,6 @@ export const load: PageServerLoad = async () => {
 	if (!card) {
 		return { card: null };
 	}
-	recordReading(db, card.id);
 	// Render the markdown body through the canonical module (roadmap section 7):
 	// it produces sanitized HTML with highlighted code and internal links
 	// rewritten to in-app card routes. Resolving those relative links needs the
