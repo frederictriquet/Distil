@@ -52,9 +52,9 @@ Ces bases transverses sont établies avant les pages pour que chacune en hérite
 - [ ] **8.5** Ajouter les actions « plus de fiches de ce thème » et « moins de fiches de ce thème » qui ajustent le poids du thème.
 
 ## 9. Bookmarks
-- [ ] **9.1** Permettre la création, le renommage et la suppression de catégories de bookmarks.
-- [ ] **9.2** Permettre de bookmarker la fiche courante dans une catégorie depuis la vue d'étude.
-- [ ] **9.3** Créer la page listant les bookmarks groupés par catégorie, avec retrait d'un bookmark et navigation vers la fiche.
+- [x] **9.1** Permettre la création, le renommage et la suppression de catégories de bookmarks.
+- [x] **9.2** Permettre de bookmarker la fiche courante dans une catégorie depuis la vue d'étude.
+- [x] **9.3** Créer la page listant les bookmarks groupés par catégorie, avec retrait d'un bookmark et navigation vers la fiche.
 
 ## 10. Consultation d'une fiche précise
 - [ ] **10.1** Créer la page affichant une fiche identifiée (cible des liens internes et de la navigation depuis les bookmarks).
