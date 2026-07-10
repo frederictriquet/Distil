@@ -50,6 +50,8 @@ Ces bases transverses sont établies avant les pages pour que chacune en hérite
 - [x] **8.3** Créer la vue d'étude affichant une fiche (titre, thème, niveau, source) et son contenu.
 - [x] **8.4** Ajouter l'action « fiche suivante ».
 - [x] **8.5** Ajouter les actions « plus de fiches de ce thème » et « moins de fiches de ce thème » qui ajustent le poids du thème.
+- [ ] **8.6** Sur mobile, permettre le geste de swipe vers la gauche pour passer à la fiche suivante (comportement équivalent au bouton « fiche suivante »).
+- [ ] **8.7** Sur mobile, permettre le geste de swipe vers la droite pour ouvrir le panneau des bookmarks (sélection simple ou multiple, création de nouvelles catégories, sauvegarde de la fiche dans les catégories choisies).
 
 ## 9. Bookmarks
 - [x] **9.1** Permettre la création, le renommage et la suppression de catégories de bookmarks.
