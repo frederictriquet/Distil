@@ -76,6 +76,20 @@ function run() {
 			const rows = dbMod.db.select().from(dbMod.schema.cards).all();
 			return { existsRightAfterImport, existsAfterQuery: existsSync(dbPath), rows };
 		}
+		case 'touchDb': {
+			// Access a property on the lazy \`db\` proxy without running an actual
+			// SQL query. This alone triggers the proxy's getter, which opens the
+			// connection and calls runMigrations() -- exactly like a real query
+			// would -- but does not itself require the schema to exist, so it lets
+			// us observe runMigrations()'s own behaviour (throw or skip) in
+			// isolation from a subsequent "no such table" query failure.
+			const selectFn = dbMod.db.select;
+			return {
+				existsRightAfterImport,
+				existsAfterTouch: existsSync(dbPath),
+				gotSelectFn: typeof selectFn === 'function'
+			};
+		}
 		default:
 			throw new Error('unknown harness action: ' + action);
 	}
@@ -98,10 +112,15 @@ after(() => {
 	if (harnessDir) fs.rmSync(harnessDir, { recursive: true, force: true });
 });
 
-/** Run one harness action, out-of-process via tsx, against the given (possibly not-yet-existing) database path. */
-function runHarness(databasePath, action) {
+/**
+ * Run one harness action, out-of-process via tsx, against the given (possibly
+ * not-yet-existing) database path. `cwd` defaults to the real project root
+ * (which has a `drizzle/` folder); pass a different directory to exercise
+ * MIGRATIONS_FOLDER resolving to a path that doesn't exist.
+ */
+function runHarness(databasePath, action, cwd = ROOT) {
 	const result = spawnSync(process.execPath, [TSX_CLI, harnessPath, ROOT, databasePath, action], {
-		cwd: ROOT,
+		cwd,
 		encoding: 'utf8',
 		timeout: 30 * 1000,
 		// The harness imports the real db/index.ts module, which resolves its
@@ -182,6 +201,62 @@ describe('the first query through the lazy `db` singleton auto-applies migration
 		// drizzle's migrator erroring out on migrations it already applied.
 		const result = runHarness(dbPath, 'queryCards');
 		assert.deepEqual(result.rows, [], 'querying an already-migrated database again must still succeed');
+	});
+});
+
+describe('runMigrations skips silently (does not throw) when the drizzle/ migrations folder is absent from the working directory', () => {
+	let cwdDir;
+	let dbPath;
+
+	before(() => {
+		// A fresh temp dir that -- unlike ROOT or the app copy used by the other
+		// describe blocks below -- has no `drizzle/` subfolder at all. `db/index.ts`
+		// resolves MIGRATIONS_FOLDER as join(process.cwd(), 'drizzle'), so spawning
+		// the harness with this as `cwd` makes that path point at a directory that
+		// does not exist, exercising the `if (!existsSync(MIGRATIONS_FOLDER)) return;`
+		// early-return branch added in the "skip boot migration when the drizzle
+		// folder is absent" fix.
+		cwdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'distil-db-boot-no-drizzle-'));
+		dbPath = path.join(cwdDir, 'app.db');
+	});
+
+	after(() => {
+		if (cwdDir) fs.rmSync(cwdDir, { recursive: true, force: true });
+	});
+
+	test('touching the lazy `db` handle does not throw even though drizzle/ is missing', () => {
+		assert.equal(
+			fs.existsSync(path.join(cwdDir, 'drizzle')),
+			false,
+			'sanity check: this working directory must have no drizzle/ folder'
+		);
+
+		// runHarness() throws (surfacing stdout/stderr) if the spawned process
+		// exits non-zero, so simply not throwing here is the assertion that
+		// runMigrations() skipped instead of letting drizzle's migrator blow up
+		// on a nonexistent migrationsFolder.
+		const result = runHarness(dbPath, 'touchDb', cwdDir);
+
+		assert.equal(result.existsRightAfterImport, false, 'importing db/index.ts must still not create the file');
+		assert.equal(result.gotSelectFn, true, 'the lazy `db` handle must still be usable after the skipped migration');
+		assert.ok(result.existsAfterTouch, 'opening the connection still creates the (unmigrated) database file');
+	});
+
+	test('no schema was applied: the connection opens but the database stays empty (skip, not a silent migrate)', () => {
+		const raw = new Database(dbPath);
+		try {
+			const tables = raw
+				.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+				.all()
+				.map((row) => row.name);
+			assert.deepEqual(
+				tables,
+				[],
+				'with no drizzle/ folder to read migrations from, no tables (including __drizzle_migrations) must be created'
+			);
+		} finally {
+			raw.close();
+		}
 	});
 });
 
