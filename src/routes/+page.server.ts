@@ -14,9 +14,12 @@
 // project's SvelteKit action rules.
 
 import { fail, redirect, type Actions } from '@sveltejs/kit';
+import { eq } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
+import { knowledgeBases } from '$lib/server/db/schema';
 import { adjustThemeWeight, drawCard, recordReading } from '$lib/server/study';
+import { renderCardMarkdown } from '$lib/server/markdown';
 
 export const load: PageServerLoad = async () => {
 	const card = drawCard(db);
@@ -24,6 +27,20 @@ export const load: PageServerLoad = async () => {
 		return { card: null };
 	}
 	recordReading(db, card.id);
+	// Render the markdown body through the canonical module (roadmap section 7):
+	// it produces sanitized HTML with highlighted code and internal links
+	// rewritten to in-app card routes. Resolving those relative links needs the
+	// KB's content sub-directory alongside the card's own source path.
+	const kb = db
+		.select({ contentSubdir: knowledgeBases.contentSubdir })
+		.from(knowledgeBases)
+		.where(eq(knowledgeBases.id, card.kbId))
+		.get();
+	const bodyHtml = renderCardMarkdown(card.content, {
+		kbId: card.kbId,
+		sourcePath: card.sourcePath,
+		contentSubdir: kb?.contentSubdir ?? ''
+	});
 	return {
 		card: {
 			id: card.id,
@@ -31,9 +48,9 @@ export const load: PageServerLoad = async () => {
 			theme: card.theme,
 			level: card.level,
 			source: card.sourcePath,
-			// Raw markdown body. Roadmap 7 (markdown -> sanitized HTML) is not built
-			// yet, so the view renders this as escaped plain text (never as HTML).
-			body: card.content
+			// Sanitized HTML rendered from the card's markdown body (section 7),
+			// safe to inject with {@html} in the view.
+			bodyHtml
 		}
 	};
 };
