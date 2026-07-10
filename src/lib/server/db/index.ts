@@ -11,7 +11,7 @@
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { resolveDatabasePath } from './config';
 import * as schema from './schema';
@@ -31,8 +31,16 @@ const MIGRATIONS_FOLDER = join(process.cwd(), 'drizzle');
  * what guarantees the schema exists on a fresh database (e.g. a dev or freshly
  * deployed environment where `data/distil.db` is created on the fly), so the
  * first query against a table like `cards` no longer fails with "no such table".
+ *
+ * If the migrations folder is absent from the working directory (e.g. a runtime
+ * whose database schema is already provisioned out of band and that ships
+ * without the `drizzle/` sources), there is nothing to apply: skip rather than
+ * fail, since drizzle's migrator would otherwise throw on the missing folder.
  */
 export function runMigrations(database: ReturnType<typeof createDb>): void {
+	if (!existsSync(MIGRATIONS_FOLDER)) {
+		return;
+	}
 	migrate(database, { migrationsFolder: MIGRATIONS_FOLDER });
 }
 
