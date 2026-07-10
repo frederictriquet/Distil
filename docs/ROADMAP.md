@@ -45,11 +45,11 @@ Ces bases transverses sont établies avant les pages pour que chacune en hérite
 - [ ] **7.2** Réécrire les liens internes entre fiches pour qu'ils pointent vers la fiche correspondante dans l'application.
 
 ## 8. Tirage et vue d'étude
-- [ ] **8.1** Implémenter le tirage aléatoire pondéré des fiches (KB en focus, fiches actives, poids par thème, exclusion des fiches vues récemment).
-- [ ] **8.2** Enregistrer chaque lecture dans l'historique.
-- [ ] **8.3** Créer la vue d'étude affichant une fiche (titre, thème, niveau, source) et son contenu.
-- [ ] **8.4** Ajouter l'action « fiche suivante ».
-- [ ] **8.5** Ajouter les actions « plus de fiches de ce thème » et « moins de fiches de ce thème » qui ajustent le poids du thème.
+- [x] **8.1** Implémenter le tirage aléatoire pondéré des fiches (KB en focus, fiches actives, poids par thème, exclusion des fiches vues récemment).
+- [x] **8.2** Enregistrer chaque lecture dans l'historique.
+- [x] **8.3** Créer la vue d'étude affichant une fiche (titre, thème, niveau, source) et son contenu.
+- [x] **8.4** Ajouter l'action « fiche suivante ».
+- [x] **8.5** Ajouter les actions « plus de fiches de ce thème » et « moins de fiches de ce thème » qui ajustent le poids du thème.
 
 ## 9. Bookmarks
 - [ ] **9.1** Permettre la création, le renommage et la suppression de catégories de bookmarks.
