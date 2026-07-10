@@ -17,7 +17,7 @@
 
 import matter from 'gray-matter';
 import simpleGit from 'simple-git';
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { cards, knowledgeBases, themePreferences } from './db/schema';
@@ -85,6 +85,11 @@ export async function cloneOrUpdateRepo(
 		return repoDir;
 	}
 
+	// Start from a clean directory: a previous clone that failed after writing
+	// partial content but before creating `.git` would otherwise leave a
+	// non-empty, `.git`-less directory that git refuses to clone into, wedging
+	// every future sync. Removing it first makes retries self-healing.
+	rmSync(repoDir, { recursive: true, force: true });
 	mkdirSync(repoDir, { recursive: true });
 	await simpleGit().clone(kb.repoUrl, repoDir, ['--branch', kb.branch, '--single-branch']);
 	return repoDir;
@@ -223,9 +228,10 @@ export function reconcileCards(db: Db, kbId: number, parsed: ParsedCard[]): Sync
 			}
 
 			// Only count (and write) a real change: identical, still-active cards
-			// are left alone so a no-op re-sync reports nothing.
+			// are left alone so a no-op re-sync reports nothing. `slug` is derived
+			// deterministically from `sourcePath` (the match key), so it can never
+			// diverge for a matched row and is not part of the comparison.
 			const changed =
-				current.slug !== card.slug ||
 				current.title !== card.title ||
 				current.theme !== card.theme ||
 				current.level !== card.level ||
