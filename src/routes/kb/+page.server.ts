@@ -113,7 +113,7 @@ export const actions: Actions = {
 
 		try {
 			const report = await syncKnowledgeBase(db, kb);
-			return { action: 'sync', success: true, id, report };
+			return { action: 'sync', success: true, report };
 		} catch (error) {
 			// A clone/fetch failure (bad URL, unreachable remote, missing branch)
 			// is an expected runtime condition, not a bug: surface it to the user

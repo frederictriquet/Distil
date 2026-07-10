@@ -29,8 +29,7 @@
 
 	/**
 	 * Report from a successful synchronisation (6.7): how many cards were added,
-	 * updated and deactivated, keyed by the KB it ran against so it shows next to
-	 * the right row.
+	 * updated and deactivated. Shown as a single page-level banner above the list.
 	 */
 	const syncReport = $derived(
 		form && form.action === 'sync' && form.success ? form.report : undefined

@@ -144,7 +144,23 @@ export function parseCards(repoDir: string, contentSubdir: string): ParsedCard[]
 		}
 
 		const raw = readFileSync(filePath, 'utf8');
-		const { data, content } = matter(raw);
+
+		// Ingesting arbitrary external-repo content means a single file with
+		// broken YAML frontmatter is an expected failure mode, not a bug: gray-
+		// matter throws a YAMLException on it. Translate that into a handled
+		// result — skip just that file (logged) — so one malformed card can never
+		// abort ingestion of the whole KB.
+		let data: Record<string, unknown>;
+		let content: string;
+		try {
+			({ data, content } = matter(raw) as { data: Record<string, unknown>; content: string });
+		} catch (error) {
+			console.warn(
+				`Skipping card with unparseable frontmatter at ${toPosix(relative(repoDir, filePath))}:`,
+				error instanceof Error ? error.message : error
+			);
+			continue;
+		}
 
 		// 6.3: skip generated index files, flagged by `type: index` frontmatter.
 		if (asTrimmedString(data.type).toLowerCase() === 'index') {
