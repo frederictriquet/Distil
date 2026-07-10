@@ -10,12 +10,31 @@
 // migration tooling and tests, which control when/where the file is created).
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { resolveDatabasePath } from './config';
 import * as schema from './schema';
 
 export { schema };
+
+// Folder holding the generated drizzle migrations (0000_*.sql + meta/). It sits
+// at the project root and is resolved from the working directory, matching how
+// the standalone `npm run db:migrate` (drizzle-kit) locates it.
+const MIGRATIONS_FOLDER = join(process.cwd(), 'drizzle');
+
+/**
+ * Apply any pending drizzle migrations to the given database.
+ *
+ * This is idempotent: drizzle records applied migrations in its own bookkeeping
+ * table, so re-running it against an already-migrated database is a no-op. It is
+ * what guarantees the schema exists on a fresh database (e.g. a dev or freshly
+ * deployed environment where `data/distil.db` is created on the fly), so the
+ * first query against a table like `cards` no longer fails with "no such table".
+ */
+export function runMigrations(database: ReturnType<typeof createDb>): void {
+	migrate(database, { migrationsFolder: MIGRATIONS_FOLDER });
+}
 
 /** Open a better-sqlite3 connection with the recommended pragmas applied. */
 export function createSqliteConnection(databasePath: string): Database.Database {
@@ -43,6 +62,11 @@ export const db = new Proxy({} as ReturnType<typeof createDb>, {
 		if (!database) {
 			connection = createSqliteConnection(resolveDatabasePath());
 			database = createDb(connection);
+			// Ensure the schema is in place before the first query. Opening the
+			// connection stays lazy (this only runs on first real use, never at
+			// import time), so the migration tooling and tests that build their
+			// own connection via createDb() are unaffected.
+			runMigrations(database);
 		}
 		return Reflect.get(database, prop, receiver);
 	}
