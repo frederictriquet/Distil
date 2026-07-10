@@ -1,7 +1,8 @@
-// Cards index at /browse: list, search and filter (roadmap section 11).
+// Cards index at /cards: list, search and filter (roadmap section 11).
 //
-// It lives at /browse rather than /cards so it does not shadow the existing
-// single-card route /cards/<id> (see the note in +page.svelte).
+// This index page and the single-card route /cards/<id> coexist without
+// shadowing: /cards renders this list, while /cards/<id> renders the
+// consultation page (see the note in +page.svelte).
 //
 // All state lives in the URL query string (11.4): `q` (keyword search), `kb`,
 // `theme` and `level` (filters). Because the state is URL-borne, opening a card

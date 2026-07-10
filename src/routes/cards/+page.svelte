@@ -2,10 +2,9 @@
 	// Cards index (roadmap section 11): browse, search and filter the active
 	// cards of the knowledge bases in focus, then open one for consultation.
 	//
-	// This lives at /browse (not /cards) so it does not shadow the existing
-	// single-card route /cards/<id>: mounting an index at /cards would turn the
-	// trailing-slash URL /cards/ into a redirect to the list instead of the 404
-	// that /cards/<id> answers for a structurally invalid id.
+	// This index at /cards coexists with the single-card route /cards/<id>
+	// without shadowing it: /cards renders this list, /cards/<id> renders the
+	// consultation page, and /cards/<invalid-id> still yields a 404.
 	//
 	// The search + filter form submits with GET, so the current state is written
 	// to the URL query string (11.4). Opening a card navigates to the existing
@@ -83,7 +82,7 @@
 
 			<div class="filters__actions">
 				<button type="submit" class="primary">Apply</button>
-				<a class="reset" href="/browse">Reset</a>
+				<a class="reset" href="/cards">Reset</a>
 			</div>
 		</form>
 
@@ -121,7 +120,7 @@
 				description="No card in focus matches your search and filters. Try different keywords or reset the filters."
 			>
 				{#snippet action()}
-					<a class="cta" href="/browse">Reset filters</a>
+					<a class="cta" href="/cards">Reset filters</a>
 				{/snippet}
 			</EmptyState>
 		{/if}
