@@ -61,9 +61,9 @@
 		<header class="app-header">
 			<div class="app-header__inner">
 				<!-- Preloading links to `/` (the study view) is safe: its `load` only
-				     draws a card, and the reading is recorded from the client once the
-				     card is actually mounted (see routes/+page.svelte), never during a
-				     preload. So all links keep the app-wide hover preloading. -->
+				     draws a card, and the reading is recorded server-side only when the
+				     user advances away from a card (see routes/+page.server.ts), never
+				     during a preload. So all links keep the app-wide hover preloading. -->
 				<a class="brand" href="/">Distil</a>
 				<nav class="nav" aria-label="Primary">
 					{#each navItems as item (item.href)}

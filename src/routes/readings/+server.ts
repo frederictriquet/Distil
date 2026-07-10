@@ -1,10 +1,12 @@
 // Reading-record endpoint (roadmap section 8.2).
 //
 // Recording a reading is decoupled from drawing a card: the study view's `load`
-// only draws (see ../+page.server.ts), and the client POSTs here once a card is
-// actually mounted/displayed (see ../+page.svelte). Because a SvelteKit preload
-// runs `load` without ever mounting the component, no "phantom" reading is
-// recorded for preloads, back/forward, or refreshes that never present a card.
+// only draws (see ../+page.server.ts). This endpoint records a reading as an
+// explicit, validated "this card was shown" signal — the study view itself
+// records server-side from its POST-redirect-GET actions (so recording works
+// without JS), and this endpoint offers the same recording as a programmatic
+// signal. Because a bare GET/preload of `/` never records, no "phantom" reading
+// is logged for preloads, back/forward, or refreshes that never present a card.
 //
 // A dedicated endpoint is used rather than a form action on `/` for two reasons:
 // a successful form action re-runs the page's `load`, which would draw a fresh
@@ -19,11 +21,15 @@ import { cards } from '$lib/server/db/schema';
 import { recordReading } from '$lib/server/study';
 
 export const POST: RequestHandler = async ({ request }) => {
+	// A malformed JSON body is not a special case: it simply yields no usable
+	// `cardId`, so it funnels into the same boundary validation below (a 400)
+	// rather than a separate error path. Read the raw body and parse defensively.
+	const rawBody = await request.text();
 	let payload: unknown;
 	try {
-		payload = await request.json();
+		payload = rawBody ? JSON.parse(rawBody) : {};
 	} catch {
-		error(400, 'Expected a JSON body of the form { "cardId": <positive integer> }.');
+		payload = {};
 	}
 
 	// Validate the externally supplied id at the boundary rather than trusting the
