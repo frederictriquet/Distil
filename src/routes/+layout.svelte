@@ -59,12 +59,18 @@
 	<div class="app-shell">
 		<header class="app-header">
 			<div class="app-header__inner">
-				<a class="brand" href="/">Distil</a>
+				<!-- Preload is disabled for links to `/` (the study view): its `load`
+				     draws a card and records a reading, so hover/tap preloading would
+				     fire phantom draws that corrupt reading history and the recency
+				     exclusion. Other sections have side-effect-free loads and keep the
+				     app-wide hover preloading. -->
+				<a class="brand" href="/" data-sveltekit-preload-data="off">Distil</a>
 				<nav class="nav" aria-label="Primary">
 					{#each navItems as item (item.href)}
 						<a
 							class="nav__link"
 							href={item.href}
+							data-sveltekit-preload-data={item.href === '/' ? 'off' : 'hover'}
 							aria-current={isActive(item.href) ? 'page' : undefined}
 						>
 							{item.label}

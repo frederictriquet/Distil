@@ -118,9 +118,8 @@ export function getRecentCardIds(db: Db, limit: number = DEFAULT_RECENT_COUNT): 
 /**
  * Pick one item at random, weighted by each item's `weight`. Pure and
  * deterministic given `rng` (a float source in [0, 1)), so callers/tests can
- * inject a fixed sequence. Non-positive weights are treated as 0; if every
- * weight is 0 the pick falls back to a uniform choice so a card is still
- * returned. Returns `undefined` only for an empty list.
+ * inject a fixed sequence. Non-positive weights are treated as 0. Returns
+ * `undefined` only for an empty list.
  */
 export function weightedPick<T extends { weight: number }>(
 	items: T[],
@@ -130,12 +129,6 @@ export function weightedPick<T extends { weight: number }>(
 		return undefined;
 	}
 	const total = items.reduce((sum, item) => sum + Math.max(0, item.weight), 0);
-	if (total <= 0) {
-		// All weights are zero/negative: fall back to a uniform pick so the draw
-		// never silently returns nothing for an otherwise eligible pool.
-		const index = Math.min(items.length - 1, Math.floor(rng() * items.length));
-		return items[index];
-	}
 	let threshold = rng() * total;
 	for (const item of items) {
 		threshold -= Math.max(0, item.weight);
@@ -143,8 +136,10 @@ export function weightedPick<T extends { weight: number }>(
 			return item;
 		}
 	}
-	// Floating-point drift can leave `threshold` marginally >= 0 after the loop;
-	// the last item is the correct fallback.
+	// The running threshold never dropped below 0: either every weight was
+	// non-positive (total is 0, so `threshold` stayed 0) or floating-point drift
+	// left it marginally >= 0 after the loop. Either way the last item is the
+	// correct fallback, so an otherwise eligible pool is never silently empty.
 	return items[items.length - 1];
 }
 
