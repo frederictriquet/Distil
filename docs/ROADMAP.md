@@ -62,10 +62,10 @@ Ces bases transverses sont établies avant les pages pour que chacune en hérite
 - [x] **10.1** Créer la page affichant une fiche identifiée (cible des liens internes et de la navigation depuis les bookmarks).
 
 ## 11. Recherche, liste et navigation dans les fiches
-- [ ] **11.1** Créer la page listant les fiches (fiches actives des KB en focus) avec titre, thème et source.
-- [ ] **11.2** Ajouter la recherche par mots-clés (titre, thème et contenu des fiches).
-- [ ] **11.3** Ajouter le filtrage de la liste (par KB, thème et niveau).
-- [ ] **11.4** Permettre d'ouvrir une fiche depuis la liste et de revenir à la liste en conservant la recherche et le filtrage en cours (état préservé), pour enchaîner la consultation de plusieurs fiches sans refaire la recherche.
+- [x] **11.1** Créer la page listant les fiches (fiches actives des KB en focus) avec titre, thème et source.
+- [x] **11.2** Ajouter la recherche par mots-clés (titre, thème et contenu des fiches).
+- [x] **11.3** Ajouter le filtrage de la liste (par KB, thème et niveau).
+- [x] **11.4** Permettre d'ouvrir une fiche depuis la liste et de revenir à la liste en conservant la recherche et le filtrage en cours (état préservé), pour enchaîner la consultation de plusieurs fiches sans refaire la recherche.
 
 ## 12. Finitions
 - [ ] **12.1** Soigner la mise en forme et la navigation générale (passe finale de polish).
