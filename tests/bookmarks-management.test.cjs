@@ -380,6 +380,16 @@ describe('bookmarking a card into a category, toggle semantics (task 9.2)', () =
 		const result = runBookmarks(dbPath, 'addBookmark', { cardId, categoryId });
 		assert.deepEqual(result, { ok: true, created: true });
 	});
+
+	test('adding a bookmark whose card no longer exists is a handled missing-reference result, not a crash', () => {
+		const result = runBookmarks(dbPath, 'addBookmark', { cardId: 999999, categoryId });
+		assert.deepEqual(result, { ok: false, reason: 'missing-reference' });
+	});
+
+	test('adding a bookmark whose category no longer exists is a handled missing-reference result, not a crash', () => {
+		const result = runBookmarks(dbPath, 'addBookmark', { cardId, categoryId: 999999 });
+		assert.deepEqual(result, { ok: false, reason: 'missing-reference' });
+	});
 });
 
 describe('listing bookmarks grouped by category (task 9.3)', () => {
@@ -784,6 +794,10 @@ describe("the bookmarks route's action/HTTP contract (tasks 9.1, 9.2: id validat
 		assert.equal(res.status, 400);
 	});
 
+	test('renameCategory with a present id but a blank name answers 400, not a silent success', async () => {
+		assert.equal((await callBookmarksAction('renameCategory', { id: String(categoryId), name: '   ' })).status, 400);
+	});
+
 	test('deleteCategory with a non-numeric id answers 400, not a silent success', async () => {
 		assert.equal((await callBookmarksAction('deleteCategory', { id: 'nope' })).status, 400);
 	});
@@ -805,6 +819,16 @@ describe("the bookmarks route's action/HTTP contract (tasks 9.1, 9.2: id validat
 	test('addBookmark for a pair that is already bookmarked answers 409, not a 500', async () => {
 		const res = await callBookmarksAction('addBookmark', { cardId: String(cardId), categoryId: String(categoryId) });
 		assert.equal(res.status, 409);
+	});
+
+	test('addBookmark for a valid-but-nonexistent cardId answers 404 (foreign-key violation), not a 500', async () => {
+		const res = await callBookmarksAction('addBookmark', { cardId: '999999', categoryId: String(categoryId) });
+		assert.equal(res.status, 404);
+	});
+
+	test('addBookmark for a valid-but-nonexistent categoryId answers 404 (foreign-key violation), not a 500', async () => {
+		const res = await callBookmarksAction('addBookmark', { cardId: String(cardId), categoryId: '999999' });
+		assert.equal(res.status, 404);
 	});
 
 	test('removeBookmark with a non-numeric cardId or categoryId answers 400, not a silent success', async () => {
