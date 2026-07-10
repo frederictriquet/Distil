@@ -7,10 +7,10 @@
 //     row for it;
 //   - 8.3 the study view renders the drawn card's title, theme, level, source
 //     and body, and never injects unsanitized HTML from the card body (the
-//     content-rendering pipeline from roadmap 7 is not built yet, and the
-//     view must render the raw markdown safely in the meantime); it also
-//     shows an empty state (recording nothing) when there is no eligible
-//     card;
+//     body is rendered to sanitized HTML by the roadmap section 7 pipeline in
+//     $lib/server/markdown, so a hostile <script> is stripped rather than
+//     surviving); it also shows an empty state (recording nothing) when there
+//     is no eligible card;
 //   - 8.4 the "next card" action draws and records a new card, excluding the
 //     one just shown so it does not immediately repeat;
 //   - 8.5 the "more"/"less of this theme" actions adjust the submitted
@@ -408,7 +408,7 @@ describe('the study view draws, records and renders a card safely (tasks 8.2 & 8
 		assert.equal(count, 1, 'the drawn card must be recorded in reading_history');
 	});
 
-	test('a card body containing HTML is rendered escaped, never as raw unsanitized HTML', async () => {
+	test('a card body containing HTML is rendered as sanitized HTML, never as raw unsanitized HTML', async () => {
 		// Keep drawing until card A (the one with the <script> body) comes up;
 		// the "next" action (task 8.4) is exactly the mechanism the real view
 		// uses to do this, so this also doubly-exercises task 8.4.
@@ -418,12 +418,13 @@ describe('the study view draws, records and renders a card safely (tasks 8.2 & 8
 			html = await (await fetch(`${app.baseUrl}/`, { redirect: 'manual', headers: { cookie } })).text();
 		}
 		assert.ok(html.includes('Card A Title'), 'expected card A to come up within a handful of "next" draws');
-		// `<` is the character that matters for injection (it is what opens a
-		// tag); a bare `>` in text content is inert, so only `<` is required to
-		// be escaped for this to be safe. Assert on the literal opening tag
-		// never appearing raw, and on the escaped form appearing instead.
-		assert.doesNotMatch(html, /<script>alert\(1\)/, 'a raw <script> tag must never appear unescaped');
-		assert.match(html, /&lt;script>alert\(1\)/, 'the card body\'s "<" must be HTML-escaped');
+		// Roadmap section 7 renders the markdown body to sanitized HTML through
+		// $lib/server/markdown before it reaches the view. The hostile <script>
+		// must therefore be stripped by DOMPurify: neither the raw tag nor its
+		// payload may survive, and the surrounding body text is still shown.
+		assert.doesNotMatch(html, /<script>alert\(1\)/, 'a raw <script> tag must never survive rendering');
+		assert.doesNotMatch(html, /alert\(1\)/, 'the hostile script payload must be sanitized away');
+		assert.match(html, /Some body text with a/, 'the surrounding card body text must still be rendered');
 	});
 });
 

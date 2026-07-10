@@ -41,8 +41,8 @@ Ces bases transverses sont établies avant les pages pour que chacune en hérite
 - [x] **6.7** Déclencher la synchronisation depuis la page KB et afficher un compte rendu (ajouts, mises à jour, désactivations).
 
 ## 7. Rendu du contenu
-- [ ] **7.1** Convertir le corps Markdown d'une fiche en HTML sécurisé (avec coloration du code).
-- [ ] **7.2** Réécrire les liens internes entre fiches pour qu'ils pointent vers la fiche correspondante dans l'application.
+- [x] **7.1** Convertir le corps Markdown d'une fiche en HTML sécurisé (avec coloration du code).
+- [x] **7.2** Réécrire les liens internes entre fiches pour qu'ils pointent vers la fiche correspondante dans l'application.
 
 ## 8. Tirage et vue d'étude
 - [x] **8.1** Implémenter le tirage aléatoire pondéré des fiches (KB en focus, fiches actives, poids par thème, exclusion des fiches vues récemment).

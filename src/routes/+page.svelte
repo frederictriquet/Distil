@@ -44,11 +44,12 @@
 					</dl>
 				</header>
 
-				{#if data.card.body}
-					<!-- Roadmap 7 (markdown -> sanitized HTML) is not built yet, so the
-					     body is shown as escaped plain text; Svelte's text interpolation
-					     never injects raw HTML. -->
-					<pre class="fiche__body">{data.card.body}</pre>
+				{#if data.card.bodyHtml}
+					<!-- Body is server-rendered markdown, already sanitized with
+					     DOMPurify in $lib/server/markdown (roadmap section 7), so
+					     injecting it as HTML here is safe. -->
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+					<div class="fiche__body">{@html data.card.bodyHtml}</div>
 				{:else}
 					<p class="fiche__body fiche__body--empty">This card has no content yet.</p>
 				{/if}
@@ -122,15 +123,29 @@
 
 	.fiche__body {
 		margin: 0;
-		white-space: pre-wrap;
-		word-break: break-word;
-		font-family: var(--font-mono, monospace);
-		font-size: var(--text-sm);
 		color: var(--color-text);
+		overflow-wrap: break-word;
+	}
+
+	.fiche__body :global(pre) {
+		overflow-x: auto;
+		padding: var(--space-3);
+		border-radius: var(--radius-md);
+		background-color: var(--color-surface-muted, rgba(0, 0, 0, 0.04));
+		font-size: var(--text-sm);
+	}
+
+	.fiche__body :global(code) {
+		font-family: var(--font-mono, monospace);
+	}
+
+	.fiche__body :global(.broken-link) {
+		color: var(--color-text-muted);
+		text-decoration: line-through;
+		cursor: not-allowed;
 	}
 
 	.fiche__body--empty {
-		font-family: inherit;
 		color: var(--color-text-muted);
 	}
 
