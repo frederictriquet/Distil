@@ -55,6 +55,8 @@ export interface KnowledgeBaseListItem {
 export interface KnowledgeBaseFormErrors {
 	name?: string;
 	repoUrl?: string;
+	branch?: string;
+	contentSubdir?: string;
 }
 
 /** Result of validating raw form input for a new knowledge base. */
@@ -78,13 +80,44 @@ function isValidRepoUrl(value: string): boolean {
 }
 
 /**
+ * A safe git branch/ref name: it must start with an alphanumeric or underscore
+ * (never a `-`, which git would otherwise reinterpret as an option when the
+ * branch is passed positionally to `git fetch`/`clone`), and contain only word
+ * characters, `.`, `/` and `-`, with no `..` sequence. This blocks git
+ * argument/option injection (e.g. `--upload-pack=...`) at the boundary while
+ * still accepting real branch names like `main`, `develop` or `feature/x`.
+ */
+function isValidBranch(value: string): boolean {
+	return /^\w[\w./-]*$/.test(value) && !value.includes('..');
+}
+
+/**
+ * A safe content sub-directory: a repo-relative path that stays inside the
+ * checkout. It must not be absolute and every segment must be a plain path
+ * component (word characters, `.` and `-`, not starting with `-`), never `.`
+ * or `..`. This stops path traversal (e.g. `../../etc`) before `contentSubdir`
+ * is joined onto the KB cache directory and walked for markdown files.
+ */
+function isValidContentSubdir(value: string): boolean {
+	if (value.startsWith('/') || /^[A-Za-z]:/.test(value)) {
+		return false;
+	}
+	return value.split(/[\\/]/).every(
+		(segment) => /^[\w.-]+$/.test(segment) && segment !== '.' && segment !== '..' && !segment.startsWith('-')
+	);
+}
+
+/**
  * Validate and normalise raw form values for a new KB.
  *
  * Rules (roadmap 4.2): `name` and `repoUrl` are required and `repoUrl` must be
- * a recognised git URL shape; `branch` defaults to `main` when left empty;
- * `contentSubdir` is optional (defaults to an empty string). Inputs are
- * trimmed. Returns the normalised value on success, or the per-field errors on
- * failure.
+ * a recognised git URL shape; `branch` defaults to `main` when left empty and,
+ * when given, must be a safe git ref shape; `contentSubdir` is optional
+ * (defaults to an empty string) and, when given, must be a safe repo-relative
+ * path (no traversal outside the checkout). Validating these two here keeps
+ * later git arguments and filesystem walks from being fed hostile values.
+ * Inputs are trimmed. Returns the normalised value on success, or the per-field
+ * errors on failure.
  */
 export function parseKnowledgeBaseInput(raw: {
 	name?: unknown;
@@ -106,7 +139,13 @@ export function parseKnowledgeBaseInput(raw: {
 	} else if (!isValidRepoUrl(repoUrl)) {
 		errors.repoUrl = 'Enter a valid git URL (https://, ssh://, git:// or git@host:path).';
 	}
-	if (errors.name || errors.repoUrl) {
+	if (branch.length > 0 && !isValidBranch(branch)) {
+		errors.branch = 'Enter a valid branch name (letters, digits, ., -, / — no leading dash).';
+	}
+	if (contentSubdir.length > 0 && !isValidContentSubdir(contentSubdir)) {
+		errors.contentSubdir = 'Enter a path inside the repository (no leading slash, "." or "..").';
+	}
+	if (errors.name || errors.repoUrl || errors.branch || errors.contentSubdir) {
 		return { ok: false, errors };
 	}
 

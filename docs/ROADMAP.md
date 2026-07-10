@@ -32,13 +32,13 @@ Ces bases transverses sont établies avant les pages pour que chacune en hérite
 - [x] **5.3** Permettre l'activation/désactivation du « focus » d'une KB et sa suppression (avec purge du cache local).
 
 ## 6. Synchronisation et ingestion
-- [ ] **6.1** Implémenter le clonage initial puis la mise à jour (pull) d'un dépôt KB dans un cache local.
-- [ ] **6.2** Parcourir les fichiers Markdown du sous-dossier de contenu et lire leur frontmatter.
-- [ ] **6.3** Filtrer pour ne garder que les fiches réelles (exclure les fichiers d'index générés et les fichiers de racine du wiki).
-- [ ] **6.4** Déterminer le thème de chaque fiche (champ de frontmatter, sinon catégorie déduite du dossier).
-- [ ] **6.5** Réconcilier avec la base : ajouter les nouvelles fiches, mettre à jour celles modifiées, désactiver celles disparues sans supprimer les données utilisateur associées.
-- [ ] **6.6** Créer une préférence de thème par défaut pour chaque nouveau thème rencontré.
-- [ ] **6.7** Déclencher la synchronisation depuis la page KB et afficher un compte rendu (ajouts, mises à jour, désactivations).
+- [x] **6.1** Implémenter le clonage initial puis la mise à jour (pull) d'un dépôt KB dans un cache local.
+- [x] **6.2** Parcourir les fichiers Markdown du sous-dossier de contenu et lire leur frontmatter.
+- [x] **6.3** Filtrer pour ne garder que les fiches réelles (exclure les fichiers d'index générés et les fichiers de racine du wiki).
+- [x] **6.4** Déterminer le thème de chaque fiche (champ de frontmatter, sinon catégorie déduite du dossier).
+- [x] **6.5** Réconcilier avec la base : ajouter les nouvelles fiches, mettre à jour celles modifiées, désactiver celles disparues sans supprimer les données utilisateur associées.
+- [x] **6.6** Créer une préférence de thème par défaut pour chaque nouveau thème rencontré.
+- [x] **6.7** Déclencher la synchronisation depuis la page KB et afficher un compte rendu (ajouts, mises à jour, désactivations).
 
 ## 7. Rendu du contenu
 - [ ] **7.1** Convertir le corps Markdown d'une fiche en HTML sécurisé (avec coloration du code).

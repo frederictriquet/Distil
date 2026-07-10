@@ -22,7 +22,17 @@
 	 * banner since those actions have no per-field form.
 	 */
 	const actionError = $derived(
-		form && (form.action === 'toggleFocus' || form.action === 'delete') ? form.error : undefined
+		form && (form.action === 'toggleFocus' || form.action === 'delete' || form.action === 'sync')
+			? form.error
+			: undefined
+	);
+
+	/**
+	 * Report from a successful synchronisation (6.7): how many cards were added,
+	 * updated and deactivated. Shown as a single page-level banner above the list.
+	 */
+	const syncReport = $derived(
+		form && form.action === 'sync' && form.success ? form.report : undefined
 	);
 </script>
 
@@ -35,6 +45,13 @@
 
 	{#if actionError}
 		<p class="error" role="alert">{actionError}</p>
+	{/if}
+
+	{#if syncReport}
+		<p class="report" role="status">
+			Synchronisation complete: {syncReport.added} added, {syncReport.updated} updated,
+			{syncReport.deactivated} deactivated.
+		</p>
 	{/if}
 
 	<section aria-labelledby="kb-list-heading">
@@ -67,6 +84,10 @@
 							<td>{kb.focus ? 'On' : 'Off'}</td>
 							<td>{kb.activeCardCount}</td>
 							<td class="actions">
+								<form method="POST" action="?/sync" use:enhance>
+									<input type="hidden" name="id" value={kb.id} />
+									<button type="submit">Sync</button>
+								</form>
 								<form method="POST" action="?/toggleFocus" use:enhance>
 									<input type="hidden" name="id" value={kb.id} />
 									<button type="submit">{kb.focus ? 'Unfocus' : 'Focus'}</button>
@@ -194,5 +215,10 @@
 
 	.empty {
 		color: #555;
+	}
+
+	.report {
+		color: #0b6b3a;
+		margin: 0;
 	}
 </style>
