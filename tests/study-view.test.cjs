@@ -5,14 +5,11 @@
 // app:
 //   - 8.2 a GET of the study view draws a card but records NOTHING on its own
 //     (the phantom-readings fix decouples drawing from recording): a bare
-//     load/preload of / never writes a reading_history row. Recording instead
-//     happens server-side in the "next"/"more"/"less" actions'
-//     recordShownCard, driven by the hidden `cardId` field the real study view
-//     (src/routes/+page.svelte) stamps into each of its POST-redirect-GET
-//     forms -- a missing/malformed/unknown cardId is simply not recorded (the
-//     advance itself must still succeed). The dedicated /readings endpoint
-//     offers the same recording as an alternate programmatic signal and is
-//     covered separately by tests/study-reading-signal.test.cjs;
+//     load/preload of / never writes a reading_history row, and neither does a
+//     "next"/"more"/"less" form action. Recording happens only from the client
+//     "card shown" signal (a POST to /readings the real study view sends from
+//     `afterNavigate` once the card is mounted, see src/routes/+page.svelte),
+//     which is covered end to end by tests/study-reading-signal.test.cjs;
 //   - 8.3 the study view renders the drawn card's title, theme, level, source
 //     and body, and never injects unsanitized HTML from the card body (the
 //     body is rendered to sanitized HTML by the roadmap section 7 pipeline in
@@ -20,12 +17,13 @@
 //     surviving); it also shows an empty state (recording nothing) when there
 //     is no eligible card;
 //   - 8.4 the "next card" action is a POST-redirect-GET that draws a fresh
-//     card; once the card just shown has been recorded via its cardId field,
-//     that card is excluded so it does not immediately repeat;
+//     card and records nothing on its own; once the card on screen has been
+//     recorded through the /readings signal, that card is excluded so it does
+//     not immediately repeat;
 //   - 8.5 the "more"/"less of this theme" actions adjust the submitted
 //     theme's weight up/down in themePreferences, validating the theme at
 //     the HTTP boundary (a missing/empty theme is a real 400, not a silent
-//     success), and also record the shown card via the same cardId field;
+//     success), and record nothing on their own;
 //   - the access guard (task 3.3) protects both the view and its actions.
 //
 // Like tests/access-guard-and-logout.test.cjs, the app is started for real
@@ -331,6 +329,23 @@ function postAction(baseUrl, action, { cookie, fields = {} } = {}) {
 	});
 }
 
+/**
+ * Send the "this card was really shown" signal the way the real study view
+ * does from `afterNavigate` (see src/routes/+page.svelte): a JSON POST to the
+ * dedicated /readings endpoint naming the card on screen. This is the only path
+ * that records a reading; the form actions never do.
+ */
+function postReading(baseUrl, cardId, { cookie } = {}) {
+	const headers = { 'content-type': 'application/json' };
+	if (cookie) headers.cookie = cookie;
+	return fetch(`${baseUrl}/readings`, {
+		method: 'POST',
+		redirect: 'manual',
+		headers,
+		body: JSON.stringify({ cardId })
+	});
+}
+
 /** Open a short-lived raw connection to inspect/seed fixtures directly. */
 function withRawDb(dbPath, fn) {
 	const conn = new Database(dbPath);
@@ -415,8 +430,8 @@ describe('the study view draws, records and renders a card safely (tasks 8.2 & 8
 
 		// The draw happens in load(), but recording is decoupled from it (the
 		// phantom-readings fix): a bare GET/preload of / must never write a row.
-		// Recording happens via recordShownCard on the "next"/"more"/"less"
-		// actions, covered by the "recordShownCard" describe block below.
+		// Recording happens only from the client "card shown" signal (a POST to
+		// /readings), covered by tests/study-reading-signal.test.cjs.
 		const count = withRawDb(dbPath, (raw) => raw.prepare('SELECT COUNT(*) AS n FROM reading_history').get().n);
 		assert.equal(count, 0, 'a mere load of / must not record a reading');
 	});
@@ -479,20 +494,22 @@ describe('the "next card" action excludes the card just shown (task 8.4)', () =>
 
 	const TITLE_TO_ID = { 'Card A Title': 1, 'Card B Title': 2 };
 
-	test('next redraws to a real 303 redirect, and the following GET always shows the other card (never an immediate repeat)', async () => {
+	test('next redraws to a real 303 redirect, and once the shown card is recorded it never immediately repeats', async () => {
 		const firstHtml = await (await fetch(`${app.baseUrl}/`, { redirect: 'manual', headers: { cookie } })).text();
 		const firstTitle = extractTitle(firstHtml);
 		assert.ok(TITLE_TO_ID[firstTitle], `unexpected title: ${firstTitle}`);
 
-		// The real study view stamps the drawn card's id into a hidden `cardId`
-		// field on the "next" form (see src/routes/+page.svelte); the "next"
-		// action's recordShownCard reads that field and records the reading
-		// server-side, before redrawing (roadmap 8.2/8.4).
-		const nextRes = await postAction(app.baseUrl, 'next', { cookie, fields: { cardId: String(TITLE_TO_ID[firstTitle]) } });
+		// The real study view records the card on screen through the /readings
+		// signal from `afterNavigate` (see src/routes/+page.svelte); the "next"
+		// action itself records nothing and only redraws (roadmap 8.2/8.4).
+		const signalRes = await postReading(app.baseUrl, TITLE_TO_ID[firstTitle], { cookie });
+		assert.equal(signalRes.status, 204);
+
+		const nextRes = await postAction(app.baseUrl, 'next', { cookie });
 		assert.equal(nextRes.status, 303);
 		assert.equal(nextRes.headers.get('location'), '/');
 
-		// The submitted cardId is what drove the recording, not the redraw itself.
+		// The /readings signal drove the recording, never the "next" action.
 		const countAfterNext = withRawDb(dbPath, (raw) => raw.prepare('SELECT COUNT(*) AS n FROM reading_history').get().n);
 		assert.equal(countAfterNext, 1);
 		const recordedId = withRawDb(dbPath, (raw) => raw.prepare('SELECT card_id AS cardId FROM reading_history').get().cardId);
@@ -500,7 +517,7 @@ describe('the "next card" action excludes the card just shown (task 8.4)', () =>
 
 		const secondHtml = await (await fetch(`${app.baseUrl}/`, { redirect: 'manual', headers: { cookie } })).text();
 		const secondTitle = extractTitle(secondHtml);
-		assert.notEqual(secondTitle, firstTitle, 'the pool has only 2 cards, so "next" must never repeat the one just shown');
+		assert.notEqual(secondTitle, firstTitle, 'the pool has only 2 cards, so the recorded card must not be drawn again immediately');
 
 		// The second draw is a bare load too: it must not record a reading on its own.
 		const countAfterSecondGet = withRawDb(dbPath, (raw) => raw.prepare('SELECT COUNT(*) AS n FROM reading_history').get().n);
@@ -508,7 +525,7 @@ describe('the "next card" action excludes the card just shown (task 8.4)', () =>
 	});
 });
 
-describe('recordShownCard: the "next"/"more"/"less" actions record the card named by the hidden cardId field (task 8.2)', () => {
+describe('the "next"/"more"/"less" actions advance but never record a reading themselves (task 8.2)', () => {
 	let app;
 	let workDir;
 	let dbPath;
@@ -548,70 +565,28 @@ describe('recordShownCard: the "next"/"more"/"less" actions record the card name
 		return withRawDb(dbPath, (raw) => raw.prepare('SELECT COUNT(*) AS n FROM reading_history').get().n);
 	}
 
-	function recordedCardIds() {
-		return withRawDb(dbPath, (raw) => raw.prepare('SELECT card_id AS cardId FROM reading_history ORDER BY id').all()).map(
-			(r) => r.cardId
-		);
-	}
-
-	test('"more" records the card named by cardId before adjusting the theme weight and redrawing', async () => {
+	test('"more" adjusts the theme weight and redraws, but records nothing on its own', async () => {
 		assert.equal(readingCount(), 0);
-		const res = await postAction(app.baseUrl, 'more', { cookie, fields: { theme: 'sql', cardId: '1' } });
+		const res = await postAction(app.baseUrl, 'more', { cookie, fields: { theme: 'sql' } });
 		assert.equal(res.status, 303);
 		assert.equal(res.headers.get('location'), '/');
-		assert.equal(readingCount(), 1, '"more" must record the shown card via recordShownCard, exactly like "next"');
-		assert.deepEqual(recordedCardIds(), [1]);
+		assert.equal(readingCount(), 0, 'recording is the client "card shown" signal\'s job, never the action\'s');
 	});
 
-	test('"less" also records the card named by cardId before adjusting the theme weight', async () => {
+	test('"less" adjusts the theme weight and redraws, but records nothing on its own', async () => {
 		const before = readingCount();
-		const res = await postAction(app.baseUrl, 'less', { cookie, fields: { theme: 'network', cardId: '2' } });
+		const res = await postAction(app.baseUrl, 'less', { cookie, fields: { theme: 'network' } });
 		assert.equal(res.status, 303);
 		assert.equal(res.headers.get('location'), '/');
-		assert.equal(readingCount(), before + 1, '"less" must record the shown card via recordShownCard too');
-		assert.deepEqual(recordedCardIds(), [1, 2]);
+		assert.equal(readingCount(), before, 'recording is the client "card shown" signal\'s job, never the action\'s');
 	});
 
-	test('a "next" POST with no cardId field still advances (303) but records nothing', async () => {
+	test('a "next" POST advances (303) but records nothing on its own', async () => {
 		const before = readingCount();
-		const res = await postAction(app.baseUrl, 'next', { cookie, fields: {} });
+		const res = await postAction(app.baseUrl, 'next', { cookie });
 		assert.equal(res.status, 303);
 		assert.equal(res.headers.get('location'), '/');
-		assert.equal(readingCount(), before, 'a missing cardId must not be recorded, but advancing must still succeed');
-	});
-
-	test('a "next" POST whose cardId names no existing card still advances (303) but records nothing', async () => {
-		const before = readingCount();
-		const res = await postAction(app.baseUrl, 'next', { cookie, fields: { cardId: '999999' } });
-		assert.equal(res.status, 303);
-		assert.equal(res.headers.get('location'), '/');
-		assert.equal(readingCount(), before, 'an unknown cardId must not be recorded, but advancing must still succeed');
-	});
-
-	test('a "next" POST with a malformed (non-numeric) cardId still advances (303) but records nothing', async () => {
-		const before = readingCount();
-		const res = await postAction(app.baseUrl, 'next', { cookie, fields: { cardId: 'not-a-number' } });
-		assert.equal(res.status, 303);
-		assert.equal(res.headers.get('location'), '/');
-		assert.equal(readingCount(), before, 'a malformed cardId must not be recorded, but advancing must still succeed');
-	});
-
-	test('"next" records exactly one reading for the card named, driving the recency exclusion for the redraw', async () => {
-		withRawDb(dbPath, (raw) => raw.prepare('DELETE FROM reading_history').run());
-		const firstHtml = await (await fetch(`${app.baseUrl}/`, { redirect: 'manual', headers: { cookie } })).text();
-		const firstTitle = extractTitle(firstHtml);
-		const idsByTitle = { 'Card A Title': 1, 'Card B Title': 2 };
-		const shownId = idsByTitle[firstTitle];
-		assert.ok(shownId, `unexpected title: ${firstTitle}`);
-
-		const res = await postAction(app.baseUrl, 'next', { cookie, fields: { cardId: String(shownId) } });
-		assert.equal(res.status, 303);
-		assert.equal(readingCount(), 1);
-		assert.deepEqual(recordedCardIds(), [shownId]);
-
-		const secondHtml = await (await fetch(`${app.baseUrl}/`, { redirect: 'manual', headers: { cookie } })).text();
-		const secondTitle = extractTitle(secondHtml);
-		assert.notEqual(secondTitle, firstTitle, 'the card just recorded via cardId must be excluded from the redraw');
+		assert.equal(readingCount(), before, 'advancing must succeed without writing a reading_history row');
 	});
 });
 

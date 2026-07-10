@@ -1,12 +1,12 @@
 // Reading-record endpoint (roadmap section 8.2).
 //
 // Recording a reading is decoupled from drawing a card: the study view's `load`
-// only draws (see ../+page.server.ts). This endpoint records a reading as an
-// explicit, validated "this card was shown" signal — the study view itself
-// records server-side from its POST-redirect-GET actions (so recording works
-// without JS), and this endpoint offers the same recording as a programmatic
-// signal. Because a bare GET/preload of `/` never records, no "phantom" reading
-// is logged for preloads, back/forward, or refreshes that never present a card.
+// only draws (see ../+page.server.ts). This endpoint records a reading from the
+// explicit, validated "this card was shown" signal the study view sends from
+// `afterNavigate` once the drawn card is actually mounted on screen (see
+// ../+page.svelte). Because a bare GET/preload of `/` only runs `load` and never
+// mounts the component, it fires no signal — so no "phantom" reading is logged
+// for preloads that never present a card.
 //
 // A dedicated endpoint is used rather than a form action on `/` for two reasons:
 // a successful form action re-runs the page's `load`, which would draw a fresh
