@@ -17,6 +17,9 @@ import {
 	toggleKnowledgeBaseFocus,
 	type KnowledgeBaseFormErrors
 } from '$lib/server/kb';
+import { syncKnowledgeBase } from '$lib/server/sync';
+import { knowledgeBases } from '$lib/server/db/schema';
+import { eq } from 'drizzle-orm';
 
 export const load: PageServerLoad = async () => {
 	return { knowledgeBases: listKnowledgeBases(db) };
@@ -94,5 +97,32 @@ export const actions: Actions = {
 			return fail(404, { action: 'delete', error: 'Knowledge base not found.' });
 		}
 		return { action: 'delete', success: true };
+	},
+
+	sync: async ({ request }) => {
+		const data = await request.formData();
+		const id = parseId(data.get('id'));
+		if (id === null) {
+			return fail(400, { action: 'sync', error: 'Invalid knowledge base id.' });
+		}
+
+		const kb = db.select().from(knowledgeBases).where(eq(knowledgeBases.id, id)).get();
+		if (!kb) {
+			return fail(404, { action: 'sync', error: 'Knowledge base not found.' });
+		}
+
+		try {
+			const report = await syncKnowledgeBase(db, kb);
+			return { action: 'sync', success: true, id, report };
+		} catch (error) {
+			// A clone/fetch failure (bad URL, unreachable remote, missing branch)
+			// is an expected runtime condition, not a bug: surface it to the user
+			// without stamping lastSyncedAt.
+			console.warn(`Synchronising knowledge base ${id} failed:`, error);
+			return fail(502, {
+				action: 'sync',
+				error: 'Synchronisation failed. Check the repository URL and branch, then try again.'
+			});
+		}
 	}
 };
