@@ -25,7 +25,7 @@
 			     link, bookmark or direct URL that led here still resolves: show it
 			     read-only with a clear archived banner rather than 404-ing or
 			     pretending it is a live card. -->
-			<p class="fiche__banner" role="status">
+			<p class="fiche__banner">
 				This card is archived. It was removed from its knowledge base during a
 				sync and is shown here for reference only.
 			</p>
@@ -77,7 +77,7 @@
 		margin: 0;
 		padding: var(--space-2) var(--space-3);
 		border: 1px solid var(--color-border);
-		border-left: 3px solid var(--color-danger);
+		border-left: 3px solid var(--color-primary);
 		border-radius: var(--radius-md);
 		background-color: var(--color-surface-alt);
 		color: var(--color-text-muted);

@@ -68,59 +68,59 @@
 			     (task 12.4). -->
 			<div class="table-scroll">
 				<table>
-				<thead>
-					<tr>
-						<th scope="col">Name</th>
-						<th scope="col">Repository</th>
-						<th scope="col">Branch</th>
-						<th scope="col">Sub-directory</th>
-						<th scope="col">Last synced</th>
-						<th scope="col">Focus</th>
-						<th scope="col">Active cards</th>
-						<th scope="col">Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each data.knowledgeBases as kb (kb.id)}
+					<thead>
 						<tr>
-							<td>{kb.name}</td>
-							<td class="repo">{kb.repoUrl}</td>
-							<td>{kb.branch}</td>
-							<td>{kb.contentSubdir || '—'}</td>
-							<td>{formatLastSynced(kb.lastSyncedAt)}</td>
-							<td>{kb.focus ? 'On' : 'Off'}</td>
-							<td>{kb.activeCardCount}</td>
-							<td class="actions">
-								<form method="POST" action="?/sync" use:enhance>
-									<input type="hidden" name="id" value={kb.id} />
-									<button type="submit">Sync</button>
-								</form>
-								<form method="POST" action="?/toggleFocus" use:enhance>
-									<input type="hidden" name="id" value={kb.id} />
-									<button type="submit">{kb.focus ? 'Unfocus' : 'Focus'}</button>
-								</form>
-								<form
-									method="POST"
-									action="?/delete"
-									use:enhance={({ cancel }) => {
-										// Deleting a KB hard-cascades its cards, bookmarks and reading
-										// history, so require an explicit confirmation first.
-										if (
-											!confirm(
-												`Delete "${kb.name}"? This permanently removes its cards, bookmarks and reading history.`
-											)
-										) {
-											cancel();
-										}
-									}}
-								>
-									<input type="hidden" name="id" value={kb.id} />
-									<button type="submit" class="danger">Delete</button>
-								</form>
-							</td>
+							<th scope="col">Name</th>
+							<th scope="col">Repository</th>
+							<th scope="col">Branch</th>
+							<th scope="col">Sub-directory</th>
+							<th scope="col">Last synced</th>
+							<th scope="col">Focus</th>
+							<th scope="col">Active cards</th>
+							<th scope="col">Actions</th>
 						</tr>
-					{/each}
-				</tbody>
+					</thead>
+					<tbody>
+						{#each data.knowledgeBases as kb (kb.id)}
+							<tr>
+								<td>{kb.name}</td>
+								<td class="repo">{kb.repoUrl}</td>
+								<td>{kb.branch}</td>
+								<td>{kb.contentSubdir || '—'}</td>
+								<td>{formatLastSynced(kb.lastSyncedAt)}</td>
+								<td>{kb.focus ? 'On' : 'Off'}</td>
+								<td>{kb.activeCardCount}</td>
+								<td class="actions">
+									<form method="POST" action="?/sync" use:enhance>
+										<input type="hidden" name="id" value={kb.id} />
+										<button type="submit">Sync</button>
+									</form>
+									<form method="POST" action="?/toggleFocus" use:enhance>
+										<input type="hidden" name="id" value={kb.id} />
+										<button type="submit">{kb.focus ? 'Unfocus' : 'Focus'}</button>
+									</form>
+									<form
+										method="POST"
+										action="?/delete"
+										use:enhance={({ cancel }) => {
+											// Deleting a KB hard-cascades its cards, bookmarks and reading
+											// history, so require an explicit confirmation first.
+											if (
+												!confirm(
+													`Delete "${kb.name}"? This permanently removes its cards, bookmarks and reading history.`
+												)
+											) {
+												cancel();
+											}
+										}}
+									>
+										<input type="hidden" name="id" value={kb.id} />
+										<button type="submit" class="danger">Delete</button>
+									</form>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
 				</table>
 			</div>
 		{/if}
