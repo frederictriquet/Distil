@@ -19,6 +19,7 @@
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { listCardFacets, listCards, type CardListFilters } from '$lib/server/card-list';
+import { getKnowledgeBaseCounts } from '$lib/server/kb';
 
 /** Upper bound on the accepted keyword query length, to reject abusive input. */
 const MAX_QUERY_LENGTH = 200;
@@ -54,6 +55,10 @@ export const load: PageServerLoad = async ({ url }) => {
 	return {
 		cards,
 		facets,
+		// KB counts let the view distinguish an empty perimeter's cause (task
+		// 12.2): no KB configured, none in focus, or focused KBs with no active
+		// card — each warranting a different message and action.
+		kb: getKnowledgeBaseCounts(db),
 		// Echo back only the validated values so the form reflects the effective
 		// state (matching the sanitised URL), not the raw request.
 		filters: {

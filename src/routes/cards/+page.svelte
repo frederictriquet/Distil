@@ -18,8 +18,13 @@
 	let { data }: { data: PageData } = $props();
 
 	// No knowledge base in focus owns any active card: the perimeter itself is
-	// empty, which is different from a search that simply matched nothing.
+	// empty, which is different from a search that simply matched nothing. When
+	// it is empty, the KB counts tell us *why* so we can show a precise message
+	// and action (task 12.2): no KB at all, KBs but none in focus, or focused
+	// KBs with no active card.
 	const perimeterEmpty = $derived(data.facets.knowledgeBases.length === 0);
+	const noKnowledgeBases = $derived(data.kb.total === 0);
+	const noFocus = $derived(data.kb.focused === 0);
 	const hasResults = $derived(data.cards.length > 0);
 </script>
 
@@ -29,14 +34,37 @@
 
 <PageContainer title="Cards">
 	{#if perimeterEmpty}
-		<EmptyState
-			title="No cards available"
-			description="Put a knowledge base in focus with active cards to browse and search cards here."
-		>
-			{#snippet action()}
-				<a class="cta" href="/kb">Manage knowledge bases</a>
-			{/snippet}
-		</EmptyState>
+		<!-- The perimeter is empty; the title stays stable while the description
+		     and action explain the precise cause (task 12.2): no KB configured,
+		     KBs but none in focus, or focused KBs with no active card. -->
+		{#if noKnowledgeBases}
+			<EmptyState
+				title="No cards available"
+				description="You have no knowledge base yet. Add one and sync it to browse and search its cards here."
+			>
+				{#snippet action()}
+					<a class="cta" href="/kb">Add a knowledge base</a>
+				{/snippet}
+			</EmptyState>
+		{:else if noFocus}
+			<EmptyState
+				title="No cards available"
+				description="No knowledge base is in focus. Put at least one in focus to browse and search its cards here."
+			>
+				{#snippet action()}
+					<a class="cta" href="/kb">Manage knowledge bases</a>
+				{/snippet}
+			</EmptyState>
+		{:else}
+			<EmptyState
+				title="No cards available"
+				description="The knowledge bases in focus have no active cards yet. Sync a knowledge base to ingest its cards."
+			>
+				{#snippet action()}
+					<a class="cta" href="/kb">Manage knowledge bases</a>
+				{/snippet}
+			</EmptyState>
+		{/if}
 	{:else}
 		<form method="GET" class="filters" role="search" aria-label="Search and filter cards">
 			<div class="filters__field filters__field--search">

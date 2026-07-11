@@ -10,6 +10,8 @@
 		theme: string | null;
 		level: string | null;
 		source: string | null;
+		/** Whether the card is still active; inactive cards render read-only. */
+		active: boolean;
 		bodyHtml: string;
 	}
 
@@ -18,6 +20,16 @@
 
 <Card>
 	<article class="fiche">
+		{#if !card.active}
+			<!-- The card was deactivated by a sync (its file left the repo), but the
+			     link, bookmark or direct URL that led here still resolves: show it
+			     read-only with a clear archived banner rather than 404-ing or
+			     pretending it is a live card. -->
+			<p class="fiche__banner" role="status">
+				This card is archived. It was removed from its knowledge base during a
+				sync and is shown here for reference only.
+			</p>
+		{/if}
 		<header class="fiche__header">
 			<h2 class="fiche__title">{card.title}</h2>
 			<dl class="fiche__meta">
@@ -61,6 +73,17 @@
 		gap: var(--space-4);
 	}
 
+	.fiche__banner {
+		margin: 0;
+		padding: var(--space-2) var(--space-3);
+		border: 1px solid var(--color-border);
+		border-left: 3px solid var(--color-danger);
+		border-radius: var(--radius-md);
+		background-color: var(--color-surface-alt);
+		color: var(--color-text-muted);
+		font-size: var(--text-sm);
+	}
+
 	.fiche__title {
 		margin: 0;
 	}
@@ -101,7 +124,7 @@
 		overflow-x: auto;
 		padding: var(--space-3);
 		border-radius: var(--radius-md);
-		background-color: var(--color-surface-muted, rgba(0, 0, 0, 0.04));
+		background-color: var(--color-surface-muted);
 		font-size: var(--text-sm);
 	}
 

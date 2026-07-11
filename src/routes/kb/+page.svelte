@@ -40,7 +40,10 @@
 	<title>Knowledge bases — Distil</title>
 </svelte:head>
 
-<main class="kb">
+<!-- A plain container, not a <main>: the layout shell already provides the
+     page's single <main> landmark, so this avoids a nested/duplicate landmark
+     (task 12.1). -->
+<div class="kb">
 	<h1>Knowledge bases</h1>
 
 	{#if actionError}
@@ -60,7 +63,11 @@
 		{#if data.knowledgeBases.length === 0}
 			<p class="empty">No knowledge base yet. Add one below to get started.</p>
 		{:else}
-			<table>
+			<!-- The wide multi-column table scrolls within its own box on small
+			     screens rather than forcing the whole page to scroll horizontally
+			     (task 12.4). -->
+			<div class="table-scroll">
+				<table>
 				<thead>
 					<tr>
 						<th scope="col">Name</th>
@@ -114,7 +121,8 @@
 						</tr>
 					{/each}
 				</tbody>
-			</table>
+				</table>
+			</div>
 		{/if}
 	</section>
 
@@ -160,7 +168,7 @@
 			<button type="submit">Add knowledge base</button>
 		</form>
 	</section>
-</main>
+</div>
 
 <style>
 	.kb {
@@ -172,6 +180,10 @@
 		gap: 2rem;
 	}
 
+	.table-scroll {
+		overflow-x: auto;
+	}
+
 	table {
 		width: 100%;
 		border-collapse: collapse;
@@ -181,7 +193,7 @@
 	td {
 		text-align: left;
 		padding: 0.5rem;
-		border-bottom: 1px solid #ddd;
+		border-bottom: 1px solid var(--color-border);
 		vertical-align: top;
 	}
 
@@ -205,20 +217,20 @@
 	}
 
 	.danger {
-		color: #b00020;
+		color: var(--color-danger);
 	}
 
 	.error {
-		color: #b00020;
+		color: var(--color-danger);
 		margin: 0;
 	}
 
 	.empty {
-		color: #555;
+		color: var(--color-text-muted);
 	}
 
 	.report {
-		color: #0b6b3a;
+		color: var(--color-success);
 		margin: 0;
 	}
 </style>
