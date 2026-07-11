@@ -1,11 +1,36 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { afterNavigate } from '$app/navigation';
 	import PageContainer from '$lib/components/PageContainer.svelte';
 	import Card from '$lib/components/Card.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// Recording a reading is decoupled from drawing (the phantom-readings fix):
+	// `load` only draws, so a hover/tap preload or a programmatic preload — which
+	// run `load` but never mount this component — records nothing. The reading is
+	// instead recorded by an explicit "this card was really shown" signal sent
+	// once the drawn card is on screen: `afterNavigate` fires only after a real
+	// navigation mounts/updates the page (never for a bare preload), and we POST
+	// the card's id to the dedicated /readings endpoint. Server-side validation
+	// there is the boundary that decides what is recorded (see
+	// src/routes/readings/+server.ts).
+	afterNavigate(() => {
+		const cardId = data.card?.id;
+		if (typeof cardId !== 'number') {
+			return;
+		}
+		// Fire-and-forget: the study flow does not block on the signal, and
+		// `keepalive` lets it complete even if the user advances immediately.
+		void fetch('/readings', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ cardId }),
+			keepalive: true
+		});
+	});
 </script>
 
 <svelte:head>
