@@ -68,11 +68,11 @@ Ces bases transverses sont établies avant les pages pour que chacune en hérite
 - [x] **11.4** Permettre d'ouvrir une fiche depuis la liste et de revenir à la liste en conservant la recherche et le filtrage en cours (état préservé), pour enchaîner la consultation de plusieurs fiches sans refaire la recherche.
 
 ## 12. Finitions
-- [ ] **12.1** Soigner la mise en forme et la navigation générale (passe finale de polish).
-- [ ] **12.2** Gérer les états vides (aucune KB, aucune KB en focus, aucun bookmark, aucune fiche pour la recherche/le filtrage courant).
-- [ ] **12.3** Gérer proprement l'affichage d'une fiche devenue inactive après une synchronisation.
-- [ ] **12.4** Vérifier et peaufiner le responsive sur l'ensemble des pages (contrôle, pas de refonte : les fondations sont posées en 4).
-- [ ] **12.5** Vérifier et peaufiner le mode sombre sur l'ensemble des pages (contraste, lisibilité), sans refonte.
+- [x] **12.1** Soigner la mise en forme et la navigation générale (passe finale de polish).
+- [x] **12.2** Gérer les états vides (aucune KB, aucune KB en focus, aucun bookmark, aucune fiche pour la recherche/le filtrage courant).
+- [x] **12.3** Gérer proprement l'affichage d'une fiche devenue inactive après une synchronisation.
+- [x] **12.4** Vérifier et peaufiner le responsive sur l'ensemble des pages (contrôle, pas de refonte : les fondations sont posées en 4).
+- [x] **12.5** Vérifier et peaufiner le mode sombre sur l'ensemble des pages (contraste, lisibilité), sans refonte.
 
 ## 13. Conteneurisation et déploiement
 - [x] **13.1** Écrire un Dockerfile (build multi-étapes) produisant une image de production autonome à partir de l'adapter-node.
