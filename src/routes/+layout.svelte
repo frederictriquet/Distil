@@ -22,9 +22,11 @@
 	const isAuthPage = $derived(page.url.pathname === '/login');
 
 	// Build-time application version (roadmap 13.6), shown discreetly in the
-	// footer. Guard against an empty/unknown value so we never render a bare
-	// "Version " label or an orphaned "+".
-	const appVersion = APP_VERSION?.trim() ?? '';
+	// footer. The value is "<semver>+<shortSha>"; guard against an empty/unknown
+	// value — including one whose SemVer part is missing (a leading "+", e.g.
+	// "+unknown") — so we never render a bare "Version " label or an orphaned "+".
+	const rawVersion = APP_VERSION?.trim() ?? '';
+	const appVersion = rawVersion && !rawVersion.startsWith('+') ? rawVersion : '';
 
 	function isActive(href: string): boolean {
 		const path = page.url.pathname;
