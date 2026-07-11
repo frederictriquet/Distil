@@ -10,6 +10,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Version injection (roadmap 13.5): .git is not in the build context, so
+        # pass the commit SHA (or a full version string) explicitly. Both default
+        # to empty, in which case the SHA degrades to "unknown".
+        GIT_SHA: ${GIT_SHA:-}
+        APP_VERSION: ${APP_VERSION:-}
     image: distil:latest
     restart: unless-stopped
     ports:
