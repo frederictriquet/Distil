@@ -39,6 +39,48 @@ Le port d'écoute se configure via la variable d'environnement `PORT` (par défa
 PORT=8080 node build
 ```
 
+## Docker
+
+Une image de production autonome est construite via un `Dockerfile` multi-étapes
+(build de l'app, dépendances de production, image d'exécution minimale incluant
+le binaire `git` utilisé pour synchroniser les KB). Les migrations Drizzle sont
+appliquées automatiquement au premier accès à la base ; aucune étape de
+migration hors-ligne n'est nécessaire.
+
+### Lancer avec Docker Compose (recommandé)
+
+```sh
+cp .env.example .env        # puis renseigner APP_PASSWORD et SESSION_SECRET
+docker compose up --build -d
+```
+
+L'app est ensuite disponible sur `http://localhost:3000` (port configurable via
+`APP_PORT` dans `.env`). Les données (base SQLite et cache des dépôts KB) sont
+persistées dans le volume nommé `distil-data`, monté sur `/app/data`.
+
+```sh
+docker compose logs -f      # suivre les logs
+docker compose down         # arrêter (le volume de données est conservé)
+```
+
+### Build et run manuels
+
+```sh
+docker build -t distil:latest .
+
+docker run -d --name distil \
+  -p 3000:3000 \
+  -e APP_PASSWORD='...' \
+  -e SESSION_SECRET='...' \        # >= 16 caractères, pas un placeholder
+  -e ORIGIN='http://localhost:3000' \
+  -v distil-data:/app/data \
+  distil:latest
+```
+
+Le chemin de la base est fixé à `/app/data/distil.db` dans l'image ; conserver
+le montage du volume sur `/app/data` pour persister la base **et** le cache des
+dépôts KB (`/app/data/kb-cache`).
+
 ## Tests
 
 ```sh

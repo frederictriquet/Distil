@@ -1,0 +1,38 @@
+# Build context exclusions for the Docker image build.
+#
+# Keep the context small and never leak local state or secrets into an image
+# layer. The build installs dependencies from the lockfile and runs the build
+# inside the container, so none of the following are needed (or wanted).
+
+# Dependencies and build output are produced inside the image, not copied in.
+node_modules
+build
+.svelte-kit
+package
+
+# Local application data: SQLite database and cloned KB repo cache.
+data
+
+# Secrets / environment files (real values must never end up in an image).
+.env
+.env.*
+!.env.example
+
+# Version control and project tooling metadata.
+.git
+.gitignore
+.orchestrator
+.vscode
+.claude
+
+# Docker artifacts themselves.
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Docs and misc dev files not needed at build/runtime.
+docs
+tests
+BACKLOG.md
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*

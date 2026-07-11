@@ -75,10 +75,10 @@ Ces bases transverses sont établies avant les pages pour que chacune en hérite
 - [ ] **12.5** Vérifier et peaufiner le mode sombre sur l'ensemble des pages (contraste, lisibilité), sans refonte.
 
 ## 13. Conteneurisation et déploiement
-- [ ] **13.1** Écrire un Dockerfile (build multi-étapes) produisant une image de production autonome à partir de l'adapter-node.
-- [ ] **13.2** Ajouter un `.dockerignore` (exclure `node_modules`, le build, les données locales et le fichier d'environnement).
-- [ ] **13.3** Gérer la configuration au runtime : variables d'environnement (mot de passe, secret de session, chemin de la base) et volume persistant pour la base SQLite et le cache des dépôts KB.
-- [ ] **13.4** Fournir un `docker-compose` pour lancer l'app en une commande (ports, variables, volumes) et documenter le build/run dans le README.
+- [x] **13.1** Écrire un Dockerfile (build multi-étapes) produisant une image de production autonome à partir de l'adapter-node.
+- [x] **13.2** Ajouter un `.dockerignore` (exclure `node_modules`, le build, les données locales et le fichier d'environnement).
+- [x] **13.3** Gérer la configuration au runtime : variables d'environnement (mot de passe, secret de session, chemin de la base) et volume persistant pour la base SQLite et le cache des dépôts KB.
+- [x] **13.4** Fournir un `docker-compose` pour lancer l'app en une commande (ports, variables, volumes) et documenter le build/run dans le README.
 
 ## 14. Vérification de bout en bout
 - [ ] **14.1** Ajouter une KB de test et lancer une synchronisation ; vérifier le nombre de fiches ingérées et l'exclusion des fichiers d'index.
