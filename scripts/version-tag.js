@@ -19,6 +19,8 @@ try {
 	execFileSync('git', ['tag', '-a', tag, '-m', tag], { cwd: projectRoot, stdio: 'inherit' });
 	console.log(`Created annotated tag ${tag}. Push it with: git push origin ${tag}`);
 } catch {
-	console.error(`Failed to create tag ${tag} (it may already exist).`);
+	// git prints the real cause (e.g. tag already exists, not a repository, no
+	// commits yet) to stderr above via stdio: 'inherit'; keep this message generic.
+	console.error(`Failed to create tag ${tag}. See the git error above.`);
 	process.exit(1);
 }
