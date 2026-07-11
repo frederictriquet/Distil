@@ -184,6 +184,30 @@ export function listKnowledgeBases(db: Db): KnowledgeBaseListItem[] {
 		.all();
 }
 
+/** How many knowledge bases exist, and how many of those are in focus. */
+export interface KnowledgeBaseCounts {
+	total: number;
+	focused: number;
+}
+
+/**
+ * Count the configured knowledge bases and how many are in focus. The study
+ * view and cards index use this to pick the right empty state (task 12.2): no
+ * KB at all vs. KBs configured but none in focus vs. a focused perimeter that
+ * simply holds no active card yet — each warranting a different message and
+ * action.
+ */
+export function getKnowledgeBaseCounts(db: Db): KnowledgeBaseCounts {
+	const row = db
+		.select({
+			total: sql<number>`COUNT(*)`,
+			focused: sql<number>`COUNT(CASE WHEN ${knowledgeBases.focus} = 1 THEN 1 END)`
+		})
+		.from(knowledgeBases)
+		.get();
+	return { total: row?.total ?? 0, focused: row?.focused ?? 0 };
+}
+
 /**
  * Insert a new knowledge base from validated input and return the created row.
  *

@@ -97,10 +97,36 @@
 				</form>
 			{/if}
 		</div>
-	{:else}
+	{:else if data.kb && data.kb.total === 0}
+		<!-- No card to study, and the reason is precise (task 12.2): no knowledge
+		     base is configured yet, so guide the user to add one. The title is
+		     kept stable across every empty case; the description and action carry
+		     the state-specific guidance. -->
 		<EmptyState
 			title="No card to study"
-			description="Put a knowledge base in focus with active cards to start drawing cards for study."
+			description="You have no knowledge base yet. Add one and sync it to start studying its cards."
+		>
+			{#snippet action()}
+				<a class="cta" href="/kb">Add a knowledge base</a>
+			{/snippet}
+		</EmptyState>
+	{:else if data.kb && data.kb.focused === 0}
+		<!-- Knowledge bases exist but none is in focus: the study pool is empty
+		     until at least one is focused (task 12.2). -->
+		<EmptyState
+			title="No card to study"
+			description="No knowledge base is in focus. Put at least one in focus to start drawing its cards for study."
+		>
+			{#snippet action()}
+				<a class="cta" href="/kb">Manage knowledge bases</a>
+			{/snippet}
+		</EmptyState>
+	{:else}
+		<!-- A knowledge base is in focus but holds no active card yet (never
+		     synced, or every card was deactivated): guide the user to sync. -->
+		<EmptyState
+			title="No card to study"
+			description="The knowledge bases in focus have no active cards yet. Sync a knowledge base to ingest its cards."
 		>
 			{#snippet action()}
 				<a class="cta" href="/kb">Manage knowledge bases</a>
@@ -156,7 +182,7 @@
 		overflow-x: auto;
 		padding: var(--space-3);
 		border-radius: var(--radius-md);
-		background-color: var(--color-surface-muted, rgba(0, 0, 0, 0.04));
+		background-color: var(--color-surface-muted);
 		font-size: var(--text-sm);
 	}
 
@@ -185,7 +211,7 @@
 	}
 
 	.error {
-		color: var(--color-danger, #b00020);
+		color: var(--color-danger);
 		margin: 0;
 	}
 

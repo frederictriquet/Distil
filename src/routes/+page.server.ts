@@ -30,12 +30,16 @@ import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { knowledgeBases } from '$lib/server/db/schema';
 import { adjustThemeWeight, drawCard } from '$lib/server/study';
+import { getKnowledgeBaseCounts } from '$lib/server/kb';
 import { renderCardMarkdown } from '$lib/server/markdown';
 
 export const load: PageServerLoad = async () => {
 	const card = drawCard(db);
 	if (!card) {
-		return { card: null };
+		// Nothing to draw: surface KB counts so the view can pick a precise empty
+		// state (task 12.2) — no KB configured, none in focus, or a focused
+		// perimeter with no active cards — each with a useful action.
+		return { card: null, kb: getKnowledgeBaseCounts(db) };
 	}
 	// Render the markdown body through the canonical module (roadmap section 7):
 	// it produces sanitized HTML with highlighted code and internal links
