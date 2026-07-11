@@ -29,6 +29,19 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+
+# App version injection (roadmap 13.5). `.git` is excluded from the build
+# context (see .dockerignore), so svelte.config.js cannot read the commit SHA
+# from git during the build. Pass it in as a build-arg instead:
+#   docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) .
+# GIT_SHA overrides just the SHA (SemVer still comes from package.json);
+# APP_VERSION overrides the whole version string. Both default to empty, in
+# which case the SHA degrades to "unknown" and the build still succeeds.
+ARG GIT_SHA=""
+ARG APP_VERSION=""
+ENV GIT_SHA=${GIT_SHA}
+ENV APP_VERSION=${APP_VERSION}
+
 RUN npm run build
 
 # --- Stage 2: production-only dependencies ------------------------------------
