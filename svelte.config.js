@@ -76,7 +76,13 @@ const config = {
 
 		// App version injection (roadmap 13.5): see getAppVersion above.
 		version: {
-			name: getAppVersion()
+			name: getAppVersion(),
+			// Update detection (roadmap 13.7): SvelteKit's native mechanism. The
+			// client polls this app-version manifest and flips `updated.current`
+			// (from `$app/state`) to true once a newer build has been deployed, so
+			// we can invite the user to reload. 5 minutes is a reasonable cadence:
+			// timely enough after a deploy without being chatty.
+			pollInterval: 300000
 		}
 	}
 };
