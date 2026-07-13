@@ -25,12 +25,9 @@
 //     succeeds for all of them (idempotent no-op for the duplicate, real
 //     insert for the rest) rather than failing the whole batch.
 //
-// The actual touch-driven opening of the panel (a right swipe, or the
-// "Bookmark" button) is client-runtime behaviour that cannot be driven
-// meaningfully from Node, and the pure gesture classification for the
-// direction that opens it (`detectSwipe` returning 'right') is already
-// covered by tests/swipe-left-detection.test.cjs -- 8.7 reuses that function
-// unchanged. Neither is duplicated here.
+// The actual opening of the panel (the "Bookmark" button) is client-runtime
+// behaviour that cannot be driven meaningfully from Node, so it is not
+// exercised here.
 //
 // Run with: node --test tests/
 'use strict';

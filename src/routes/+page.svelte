@@ -6,61 +6,16 @@
 	import PageContainer from '$lib/components/PageContainer.svelte';
 	import Card from '$lib/components/Card.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
-	import { detectSwipe, type SwipePoint } from '$lib/swipe';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// Progressive enhancement (roadmap 8.6): a left swipe on the card advances to
-	// the next card, doing exactly what the "Next card" button does. Rather than
-	// duplicating any draw logic, the swipe submits the existing `?/next` form
-	// programmatically, so it flows through the same use:enhance POST-redirect-GET
-	// and the afterNavigate "card shown" reading signal stays intact. The button
-	// remains present and functional; the swipe is an addition, not a replacement.
-	let nextForm: HTMLFormElement | null = $state(null);
-
-	// Only touch pointers arm a swipe, so mouse text selection and clicks on
-	// desktop are never mistaken for one. The gesture decision itself lives in the
-	// pure `detectSwipe` helper (unit-tested); here we only capture endpoints.
-	let swipeStart: SwipePoint | null = null;
-
-	function isInteractive(target: EventTarget | null): boolean {
-		return target instanceof Element && target.closest('a, button, input, textarea, select') !== null;
-	}
-
-	function onPointerDown(event: PointerEvent): void {
-		// Ignore non-touch pointers and gestures starting on a link/button so we
-		// never hijack an internal card link, a tap on an action, or text selection.
-		if (event.pointerType !== 'touch' || isInteractive(event.target)) {
-			swipeStart = null;
-			return;
-		}
-		swipeStart = { x: event.clientX, y: event.clientY };
-	}
-
-	function onPointerUp(event: PointerEvent): void {
-		if (!swipeStart) {
-			return;
-		}
-		const start = swipeStart;
-		swipeStart = null;
-		const direction = detectSwipe(start, { x: event.clientX, y: event.clientY });
-		// 8.6: a left swipe advances to the next card. 8.7: a right swipe opens the
-		// bookmark panel. Both reuse the same pure `detectSwipe` classifier, so the
-		// two gestures never conflict — the sign of the horizontal travel decides.
-		if (direction === 'left') {
-			nextForm?.requestSubmit();
-		} else if (direction === 'right') {
-			openPanel();
-		}
-	}
-
 	// --- Bookmark panel (roadmap 8.7) -------------------------------------------
 	// The panel lists the bookmark categories, lets the user pick several (and
 	// create new ones inline), and saves the current card into all picks. It is a
-	// keyboard-accessible modal dialog: opened by a right swipe or the "Bookmark"
-	// button, closed via Escape, the Close button, or a backdrop click, with focus
-	// moved in on open and restored to the trigger on close.
+	// keyboard-accessible modal dialog: opened by the "Bookmark" button, closed
+	// via Escape, the Close button, or a backdrop click, with focus moved in on
+	// open and restored to the trigger on close.
 	type Category = { id: number; name: string };
 
 	let panelOpen = $state(false);
@@ -219,15 +174,7 @@
 		{/if}
 
 		<Card>
-			<!-- Swipe target (8.6): pointer listeners feed the pure detector; a
-			     left swipe submits the ?/next form below. The card stays fully
-			     scrollable — only horizontally dominant gestures count. -->
-			<article
-				class="fiche"
-				onpointerdown={onPointerDown}
-				onpointerup={onPointerUp}
-				onpointercancel={() => (swipeStart = null)}
-			>
+			<article class="fiche">
 				<header class="fiche__header">
 					<h2 class="fiche__title">{data.card.title}</h2>
 					<dl class="fiche__meta">
@@ -265,13 +212,11 @@
 		</Card>
 
 		<div class="study-actions">
-			<form method="POST" action="?/next" use:enhance bind:this={nextForm}>
+			<form method="POST" action="?/next" use:enhance>
 				<button type="submit" class="primary">Next card</button>
 			</form>
 
-			<!-- Non-touch trigger for the bookmark panel (8.7): the right swipe is a
-			     progressive enhancement, this button makes the panel reachable with a
-			     mouse or keyboard too. -->
+			<!-- Trigger for the bookmark panel (8.7). -->
 			<button
 				type="button"
 				bind:this={triggerEl}
@@ -436,12 +381,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-4);
-		/* Swipe support (roadmap 8.6/8.7): reserve horizontal gestures for the
-		   app while keeping native vertical scrolling. Without this the browser
-		   claims horizontal touch-drags as scroll intent and fires
-		   `pointercancel`, which clears the gesture before `pointerup` can
-		   classify it — so swipes never register on mobile. */
-		touch-action: pan-y;
 	}
 
 	.fiche__title {
