@@ -3,6 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
+	import { APP_VERSION } from '$lib/version';
 
 	let { children } = $props();
 
@@ -19,6 +20,13 @@
 	// The login screen stands on its own, before the app shell is relevant, so it
 	// renders without the header/footer chrome.
 	const isAuthPage = $derived(page.url.pathname === '/login');
+
+	// Build-time application version (roadmap 13.6), shown discreetly in the
+	// footer. The value is "<semver>+<shortSha>"; guard against an empty/unknown
+	// value — including one whose SemVer part is missing (a leading "+", e.g.
+	// "+unknown") — so we never render a bare "Version " label or an orphaned "+".
+	const rawVersion = APP_VERSION?.trim() ?? '';
+	const appVersion = rawVersion && !rawVersion.startsWith('+') ? rawVersion : '';
 
 	function isActive(href: string): boolean {
 		const path = page.url.pathname;
@@ -101,6 +109,9 @@
 
 		<footer class="app-footer">
 			<span>Distil — your personal knowledge base study companion</span>
+			{#if appVersion}
+				<span class="app-footer__version">Version {appVersion}</span>
+			{/if}
 		</footer>
 	</div>
 {/if}
@@ -186,5 +197,15 @@
 		text-align: center;
 		color: var(--color-text-muted);
 		font-size: var(--text-sm);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--space-1);
+	}
+
+	.app-footer__version {
+		font-size: var(--text-sm);
+		color: var(--color-text-muted);
+		opacity: 0.85;
 	}
 </style>
