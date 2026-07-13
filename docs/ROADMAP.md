@@ -87,10 +87,10 @@ Ces bases transverses sont établies avant les pages pour que chacune en hérite
 - [x] **13.8** Ajouter une CI GitHub Actions qui construit l'image de production et la publie sur le GitHub Container Registry (GHCR), avec des tags dérivés de la version (`vX.Y.Z`, `latest`, et le SHA du commit) et l'authentification via le `GITHUB_TOKEN` intégré.
 
 ## 14. Vérification de bout en bout
-- [ ] **14.1** Ajouter une KB de test et lancer une synchronisation ; vérifier le nombre de fiches ingérées et l'exclusion des fichiers d'index.
-- [ ] **14.2** Vérifier que les actions plus/moins modifient le poids du thème et décalent la distribution des tirages.
-- [ ] **14.3** Vérifier le cycle complet des bookmarks (catégorie, ajout, liste, navigation) et les liens internes entre fiches.
-- [ ] **14.4** Vérifier la recherche et le filtrage de la liste, et le retour à la liste sans perte de la recherche/du filtrage après consultation d'une fiche.
-- [ ] **14.5** Vérifier l'évolution d'une KB : fiche modifiée mise à jour, fiche supprimée désactivée, bookmarks conservés dans les deux cas.
-- [ ] **14.6** Vérifier que la compilation de production réussit.
-- [ ] **14.7** Vérifier que l'image se construit et que l'app démarre et fonctionne en conteneur (données persistées via le volume).
+- [x] **14.1** Ajouter une KB de test et lancer une synchronisation ; vérifier le nombre de fiches ingérées et l'exclusion des fichiers d'index.
+- [x] **14.2** Vérifier que les actions plus/moins modifient le poids du thème et décalent la distribution des tirages.
+- [x] **14.3** Vérifier le cycle complet des bookmarks (catégorie, ajout, liste, navigation) et les liens internes entre fiches.
+- [x] **14.4** Vérifier la recherche et le filtrage de la liste, et le retour à la liste sans perte de la recherche/du filtrage après consultation d'une fiche.
+- [x] **14.5** Vérifier l'évolution d'une KB : fiche modifiée mise à jour, fiche supprimée désactivée, bookmarks conservés dans les deux cas.
+- [x] **14.6** Vérifier que la compilation de production réussit.
+- [x] **14.7** Vérifier que l'image se construit et que l'app démarre et fonctionne en conteneur (données persistées via le volume).
