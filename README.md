@@ -117,6 +117,38 @@ docker build --build-arg GIT_SHA="$(git rev-parse --short HEAD)" -t distil:lates
 `GIT_SHA` ne surcharge que le SHA (la version SemVer reste celle de
 `package.json`) ; `APP_VERSION` surcharge la chaîne de version complète.
 
+## Published image (GHCR)
+
+> This section is intentionally written in English (the rest of this README is
+> still French — a known, separate debt).
+
+A GitHub Actions workflow ([`.github/workflows/publish-image.yml`](.github/workflows/publish-image.yml))
+builds the production image and publishes it to the GitHub Container Registry
+(GHCR) at `ghcr.io/<owner>/<repo>`. It authenticates with the built-in
+`GITHUB_TOKEN` (no custom secret required) and runs:
+
+- on pushes to the default branch (`master`), tagging `latest` and the commit
+  SHA;
+- on SemVer release tags `vX.Y.Z`, tagging `X.Y.Z`, `X.Y`, and the commit SHA.
+
+The workflow passes the short commit SHA as the `GIT_SHA` build-arg so the
+version baked into the image is correct even though `.git` is excluded from the
+build context.
+
+Pull and run a published image:
+
+```sh
+docker pull ghcr.io/<owner>/<repo>:latest      # or a specific tag, e.g. :1.2.3
+
+docker run -d --name distil \
+  -p 3000:3000 \
+  -e APP_PASSWORD='...' \
+  -e SESSION_SECRET='...' \
+  -e ORIGIN='http://localhost:3000' \
+  -v distil-data:/app/data \
+  ghcr.io/<owner>/<repo>:latest
+```
+
 ## Tests
 
 ```sh
