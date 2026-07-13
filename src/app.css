@@ -49,6 +49,8 @@
 	--color-primary-contrast: #ffffff;
 	--color-danger: #b00020;
 	--color-success: #0b6b3a;
+	/* Modal scrim behind overlay dialogs (e.g. the study bookmark panel, 8.7). */
+	--color-scrim: rgba(0, 0, 0, 0.5);
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
 	--shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
@@ -66,6 +68,7 @@
 	--color-primary-contrast: #14151a;
 	--color-danger: #ff6b81;
 	--color-success: #5bd08a;
+	--color-scrim: rgba(0, 0, 0, 0.65);
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
 	--shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
@@ -84,6 +87,7 @@
 		--color-primary-contrast: #14151a;
 		--color-danger: #ff6b81;
 		--color-success: #5bd08a;
+		--color-scrim: rgba(0, 0, 0, 0.65);
 		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
 		--shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5);
 	}
