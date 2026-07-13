@@ -109,6 +109,21 @@ export function listBookmarkCategories(db: Db): BookmarkCategory[] {
 }
 
 /**
+ * List the ids of the categories a given card is already bookmarked in. Used by
+ * the study view's bookmark panel (task 8.7) to show which categories already
+ * hold the current card, and to reflect the post-save state back to the client.
+ */
+export function listBookmarkedCategoryIdsForCard(db: Db, cardId: number): number[] {
+	return db
+		.select({ categoryId: bookmarks.categoryId })
+		.from(bookmarks)
+		.where(eq(bookmarks.cardId, cardId))
+		.orderBy(asc(bookmarks.categoryId))
+		.all()
+		.map((row) => row.categoryId);
+}
+
+/**
  * Insert a new bookmark category from a validated name and return the created
  * row. The schema enforces a unique name, so inserting a duplicate throws a
  * SQLite `SQLITE_CONSTRAINT_UNIQUE` error; callers guard with
