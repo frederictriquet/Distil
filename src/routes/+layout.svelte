@@ -125,12 +125,12 @@
 		min-height: 100vh;
 	}
 
+	/* Mobile-first: the header sits in normal flow so it scrolls away with the
+	   content and reclaims vertical reading space. It becomes sticky again at
+	   >=40rem (desktop) below. */
 	.app-header {
 		border-bottom: 1px solid var(--color-border);
 		background-color: var(--color-surface);
-		position: sticky;
-		top: 0;
-		z-index: 10;
 	}
 
 	/* Mobile-first: the header stays a compact single bar on small screens.
@@ -201,8 +201,14 @@
 		line-height: 1;
 	}
 
-	/* Desktop and up: restore the original roomy header. */
+	/* Desktop and up: restore the original roomy, sticky header. */
 	@media (min-width: 40rem) {
+		.app-header {
+			position: sticky;
+			top: 0;
+			z-index: 10;
+		}
+
 		.app-header__inner {
 			padding: var(--space-3) var(--space-4);
 			gap: var(--space-5);
