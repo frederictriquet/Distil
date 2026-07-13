@@ -133,19 +133,24 @@
 		z-index: 10;
 	}
 
+	/* Mobile-first: the header stays a compact single bar on small screens.
+	   Roomier spacing and larger type are layered in at >=40rem below, matching
+	   the rest of the app's mobile-first breakpoint (see +page.svelte). Without
+	   this the large gaps and text-lg brand overflow a phone width and wrap the
+	   bar onto several lines. */
 	.app-header__inner {
 		max-width: var(--content-max-width);
 		margin: 0 auto;
-		padding: var(--space-3) var(--space-4);
+		padding: var(--space-2) var(--space-3);
 		display: flex;
 		align-items: center;
-		gap: var(--space-5);
+		gap: var(--space-2) var(--space-3);
 		flex-wrap: wrap;
 	}
 
 	.brand {
 		font-weight: 700;
-		font-size: var(--text-lg);
+		font-size: var(--text-base);
 		color: var(--color-text);
 	}
 
@@ -155,13 +160,13 @@
 
 	.nav {
 		display: flex;
-		gap: var(--space-2);
+		gap: var(--space-1);
 		flex: 1;
 		flex-wrap: wrap;
 	}
 
 	.nav__link {
-		padding: var(--space-2) var(--space-3);
+		padding: var(--space-1) var(--space-2);
 		border-radius: var(--radius-md);
 		color: var(--color-text-muted);
 	}
@@ -180,11 +185,49 @@
 	.app-header__actions {
 		display: flex;
 		align-items: center;
-		gap: var(--space-2);
+		gap: var(--space-1);
+		/* Keep the actions pinned to the trailing edge without stretching the
+		   nav, so the bar reads brand · nav · actions even when it wraps. */
+		margin-left: auto;
+	}
+
+	/* Trim the action buttons on mobile so brand + nav + actions fit one row. */
+	.app-header__actions :global(button) {
+		padding: var(--space-1) var(--space-2);
+		font-size: var(--text-sm);
 	}
 
 	.theme-toggle {
 		line-height: 1;
+	}
+
+	/* Desktop and up: restore the original roomy header. */
+	@media (min-width: 40rem) {
+		.app-header__inner {
+			padding: var(--space-3) var(--space-4);
+			gap: var(--space-5);
+		}
+
+		.brand {
+			font-size: var(--text-lg);
+		}
+
+		.nav {
+			gap: var(--space-2);
+		}
+
+		.nav__link {
+			padding: var(--space-2) var(--space-3);
+		}
+
+		.app-header__actions {
+			gap: var(--space-2);
+		}
+
+		.app-header__actions :global(button) {
+			padding: var(--space-2) var(--space-4);
+			font-size: var(--text-base);
+		}
 	}
 
 	.app-main {

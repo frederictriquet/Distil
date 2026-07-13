@@ -436,6 +436,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-4);
+		/* Swipe support (roadmap 8.6/8.7): reserve horizontal gestures for the
+		   app while keeping native vertical scrolling. Without this the browser
+		   claims horizontal touch-drags as scroll intent and fires
+		   `pointercancel`, which clears the gesture before `pointerup` can
+		   classify it — so swipes never register on mobile. */
+		touch-action: pan-y;
 	}
 
 	.fiche__title {
