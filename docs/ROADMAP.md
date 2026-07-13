@@ -83,7 +83,7 @@ Ces bases transverses sont établies avant les pages pour que chacune en hérite
 
 - [x] **13.5** Mettre en place le versionnage de l'application : adopter le versionnage sémantique (SemVer), matérialiser chaque version par un tag git `vX.Y.Z`, et exposer la version courante (ex. depuis `package.json`) dans l'app.
 - [x] **13.6** Afficher la version buildée dans le footer de la webapp (injectée au build, ex. version + SHA court du commit), visible sur toutes les pages.
-- [ ] **13.7** Mettre en place la détection de mise à jour via le mécanisme natif SvelteKit (`config.kit.version` + polling `version.pollInterval` et le store `updated` de `$app/state`) : détecter qu'une nouvelle version a été déployée et inviter l'utilisateur à recharger.
+- [x] **13.7** Mettre en place la détection de mise à jour via le mécanisme natif SvelteKit (`config.kit.version` + polling `version.pollInterval` et le store `updated` de `$app/state`) : détecter qu'une nouvelle version a été déployée et inviter l'utilisateur à recharger.
 - [x] **13.8** Ajouter une CI GitHub Actions qui construit l'image de production et la publie sur le GitHub Container Registry (GHCR), avec des tags dérivés de la version (`vX.Y.Z`, `latest`, et le SHA du commit) et l'authentification via le `GITHUB_TOKEN` intégré.
 
 ## 14. Vérification de bout en bout

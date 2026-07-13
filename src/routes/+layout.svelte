@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { APP_VERSION } from '$lib/version';
+	import UpdateNotifier from '$lib/components/UpdateNotifier.svelte';
 
 	let { children } = $props();
 
@@ -66,6 +67,7 @@
 	{@render children()}
 {:else}
 	<div class="app-shell">
+		<UpdateNotifier />
 		<header class="app-header">
 			<div class="app-header__inner">
 				<!-- Preloading links to `/` (the study view) is safe: its `load` only
