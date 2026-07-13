@@ -40,7 +40,6 @@ const { spawn, spawnSync } = require('node:child_process');
 const ROOT = path.resolve(__dirname, '..');
 const TSX_CLI = require.resolve('tsx/cli');
 const DRIZZLE_KIT_CLI = path.join(ROOT, 'node_modules', 'drizzle-kit', 'bin.cjs');
-const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 const TEST_PASSWORD = 'correct horse battery staple';
 const TEST_SESSION_SECRET = 'z'.repeat(32);
