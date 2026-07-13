@@ -1,0 +1,71 @@
+name: Publish image
+
+# Build the production Docker image and publish it to the GitHub Container
+# Registry (GHCR). Runs on SemVer release tags (vX.Y.Z) and on pushes to the
+# default branch (master) for a rolling `latest`.
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*.*.*"
+
+# Authenticate to GHCR with the built-in GITHUB_TOKEN: read the repo, write
+# packages. No custom secret is required.
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-image
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # GHCR requires a lowercase image name; metadata-action lowercases
+      # ${{ github.repository }} for us.
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+
+      # The Dockerfile expects GIT_SHA as a build-arg because `.git` is excluded
+      # from the build context (roadmap 13.5), so it cannot read the commit SHA
+      # itself. Pass the short SHA so the version baked into the image is correct.
+      - name: Compute short commit SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_SHA=${{ steps.sha.outputs.short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
