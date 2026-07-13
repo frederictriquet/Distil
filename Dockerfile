@@ -61,9 +61,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # simple-git (KB synchronisation) shells out to the git CLI, so it must be
-# present in the final image, not just at build time.
+# present in the final image, not just at build time. ca-certificates is
+# required too: the slim base ships no root CAs, so cloning over HTTPS fails
+# with "server certificate verification failed. CAfile: none" without it.
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends git \
+	&& apt-get install -y --no-install-recommends git ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
 
 # Production dependencies (with the compiled native addon), the standalone
