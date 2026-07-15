@@ -203,10 +203,6 @@
 			gap: var(--space-5);
 		}
 
-		.brand {
-			font-size: var(--text-lg);
-		}
-
 		.nav {
 			gap: var(--space-2);
 		}
