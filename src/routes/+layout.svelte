@@ -76,7 +76,6 @@
 				     sends from afterNavigate (see routes/+page.svelte) — never during a
 				     preload, which runs `load` without mounting the page. So all links
 				     keep the app-wide hover preloading. -->
-				<a class="brand" href="/">Distil</a>
 				<nav class="nav" aria-label="Primary">
 					{#each navItems as item (item.href)}
 						<a
@@ -146,16 +145,6 @@
 		align-items: center;
 		gap: var(--space-2) var(--space-3);
 		flex-wrap: wrap;
-	}
-
-	.brand {
-		font-weight: 700;
-		font-size: var(--text-base);
-		color: var(--color-text);
-	}
-
-	.brand:hover {
-		text-decoration: none;
 	}
 
 	.nav {
