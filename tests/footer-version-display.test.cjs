@@ -4,8 +4,9 @@
 // la webapp, visible sur toutes les pages"):
 //   - the build-time application version (APP_VERSION from $lib/version,
 //     roadmap 13.5) is rendered inside the shared footer (src/routes/
-//     +layout.svelte's .app-footer) on pages that render the app shell,
-//     alongside the pre-existing footer copy -- the fix must not replace it;
+//     +layout.svelte's .app-footer) on pages that render the app shell
+//     (the footer shows only the version -- see tests/footer-version-only.test.cjs
+//     for the "no other info" assertions);
 //   - because the footer lives in the root layout, it (and the version text
 //     with it) shows up on every shell page, not just one route;
 //   - /login intentionally renders without any shell chrome, so neither the
@@ -321,17 +322,12 @@ describe('the shared footer shows the build version on shell pages (roadmap 13.6
 	});
 
 	for (const route of ['/', '/kb', '/bookmarks']) {
-		test(`GET ${route} renders the footer with both the existing copy and "Version ${FIXED_VERSION}"`, async () => {
+		test(`GET ${route} renders the footer with "Version ${FIXED_VERSION}"`, async () => {
 			const res = await fetch(`${app.baseUrl}${route}`, { headers: { cookie } });
 			assert.equal(res.status, 200, `expected 200 from ${route}, got ${res.status}`);
 			const html = await res.text();
 
 			assert.match(html, /<footer\b/, `expected a <footer> in the response for ${route}`);
-			assert.match(
-				html,
-				/Distil\s*—\s*your personal knowledge base study companion/,
-				`the pre-existing footer copy must still render on ${route}`
-			);
 			assert.match(
 				html,
 				new RegExp(`Version\\s+${FIXED_VERSION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
@@ -404,16 +400,12 @@ describe('the footer degrades gracefully when the resolved version is empty/malf
 		if (appDir) cleanupAppCopy(appDir);
 	});
 
-	test('the shell still renders (footer copy present) with no orphaned "+" and no blank "Version" label', async () => {
+	test('the shell still renders (footer present) with no orphaned "+" and no blank "Version" label', async () => {
 		const res = await fetch(`${app.baseUrl}/`, { headers: { cookie } });
 		assert.equal(res.status, 200);
 		const html = await res.text();
 
-		assert.match(
-			html,
-			/Distil\s*—\s*your personal knowledge base study companion/,
-			'the pre-existing footer copy must still render even with a broken version string'
-		);
+		assert.match(html, /<footer\b/, 'the footer must still render even with a broken version string');
 		assert.doesNotMatch(
 			html,
 			/Version\s*\+/,
