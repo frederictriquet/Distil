@@ -109,7 +109,6 @@
 		</main>
 
 		<footer class="app-footer">
-			<span>Distil — your personal knowledge base study companion</span>
 			{#if appVersion}
 				<span class="app-footer__version">Version {appVersion}</span>
 			{/if}
