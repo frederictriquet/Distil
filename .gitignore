@@ -18,3 +18,5 @@ vite.config.ts.timestamp-*
 # Données locales de l'app : base SQLite (ex. data/distil.db)
 # et cache des dépôts KB clonés (ex. data/kb-cache/).
 /data/
+
+.orchestrator/
