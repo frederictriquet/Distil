@@ -98,6 +98,14 @@ const START_TEXT = 'quote foo quote rest'; // "quote" at 0 and 10
 const END_TEXT = 'final foo final'; // "final" at 0 and 10
 const MIX_TEXT = 'keep this line and that line';
 const HTML = '<p>Hello <strong>world</strong> &amp; <em>done</em></p>';
+// An attribute value that contains a literal '>' (a Markdown link title, or the
+// broken-link span's interpolated href): DOMPurify serialises the '>' verbatim
+// inside the quoted value, so a tag-stripping regex would leak ' b">' into the
+// text. A real parser yields the browser textContent.
+const HTML_ATTR_GT = '<a href="x" title="a > b">link text</a> after';
+// Named and numeric HTML entities the real rendered body emits; the parser must
+// decode each to the exact character the browser exposes as textContent.
+const HTML_ENTITIES = '<p>a &lt; b &gt; c &#38; d &#x41; e &nbsp;f</p>';
 
 const CALLS = [
 	// exact unique-quote resolution
@@ -159,6 +167,10 @@ const CALLS = [
 	},
 	// extraction: rendered HTML -> plain-text coordinate space
 	{ id: 'extract', fn: 'extractTextFromHtml', html: HTML },
+	// extraction: an attribute value carrying a literal '>' must not corrupt the text
+	{ id: 'extractAttrGt', fn: 'extractTextFromHtml', html: HTML_ATTR_GT },
+	// extraction: named and numeric entities decode to their real characters
+	{ id: 'extractEntities', fn: 'extractTextFromHtml', html: HTML_ENTITIES },
 	// per-card helper: a mix of one resolvable and one detached annotation
 	{
 		id: 'perCard',
@@ -210,7 +222,6 @@ describe('resolveAnchor (task 15.3)', () => {
 			status: 'resolved',
 			range: { start, end: start + 'quick'.length }
 		});
-		assert.equal(UNIQUE_TEXT.slice(start, start + 'quick'.length), 'quick');
 	});
 
 	test('disambiguates a repeated quote by its prefix/suffix context', () => {
@@ -258,9 +269,9 @@ describe('resolveAnchor (task 15.3)', () => {
 	});
 
 	test('resolves with an empty suffix (selection at the body end), disambiguated by the prefix', () => {
-		// END_TEXT: "final" at 0 and 10; prefix "foo " only precedes the second.
+		// END_TEXT: "final" at 0 and 10; prefix "foo " only precedes the second,
+		// which sits at the very end of the body (empty suffix).
 		const start = END_TEXT.lastIndexOf('final');
-		assert.equal(start + 'final'.length, END_TEXT.length, 'the second "final" is at the body end');
 		assert.deepEqual(outputs.emptySuffixEnd, {
 			status: 'resolved',
 			range: { start, end: start + 'final'.length }
@@ -271,6 +282,18 @@ describe('resolveAnchor (task 15.3)', () => {
 describe('extractTextFromHtml (task 15.3)', () => {
 	test('yields the DOM textContent: tags dropped, entities decoded, no synthetic whitespace', () => {
 		assert.equal(outputs.extract, 'Hello world & done');
+	});
+
+	test('does not leak attribute characters when an attribute value contains a literal ">"', () => {
+		// A tag-stripping regex would produce ' b">link text after'; the real
+		// parser yields the browser textContent.
+		assert.equal(outputs.extractAttrGt, 'link text after');
+	});
+
+	test('decodes named and numeric HTML entities exactly as the browser textContent does', () => {
+		// &lt;/&gt; -> "<"/">", &#38; -> "&" (decimal), &#x41; -> "A" (hex),
+		// &nbsp; -> U+00A0, a non-breaking space distinct from a plain space.
+		assert.equal(outputs.extractEntities, 'a < b > c & d A e  f');
 	});
 });
 

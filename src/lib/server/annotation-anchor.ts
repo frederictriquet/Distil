@@ -22,6 +22,8 @@
 //   rendered HTML into that plain text; every other function here is
 //   HTML-agnostic and works on a plain string.
 
+import DOMPurify from 'isomorphic-dompurify';
+
 import type { Annotation, AnnotationAnchor } from './annotations';
 
 /** A resolved character range within the plain text: `[start, end)`. */
@@ -48,44 +50,29 @@ export type ResolvedAnnotation =
 	| { annotation: Annotation; status: 'resolved'; range: AnchorRange }
 	| { annotation: Annotation; status: 'detached' };
 
-/** Named HTML entities the extractor decodes (the ones DOMPurify output emits). */
-const NAMED_ENTITIES: Record<string, string> = {
-	amp: '&',
-	lt: '<',
-	gt: '>',
-	quot: '"',
-	apos: "'",
-	nbsp: ' '
-};
-
-/** Decode a single HTML entity body (the text between `&` and `;`). */
-function decodeEntity(body: string): string {
-	if (body.startsWith('#')) {
-		const isHex = body[1] === 'x' || body[1] === 'X';
-		const codePoint = Number.parseInt(body.slice(isHex ? 2 : 1), isHex ? 16 : 10);
-		if (Number.isNaN(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
-			return `&${body};`;
-		}
-		return String.fromCodePoint(codePoint);
-	}
-	const named = NAMED_ENTITIES[body];
-	return named === undefined ? `&${body};` : named;
-}
-
 /**
- * Extract the plain text of rendered card HTML: the character sequence a browser
- * exposes as `textContent`. Tags are dropped without inserting any synthetic
- * whitespace (matching `textContent`, which does not add newlines between block
- * elements) and the named/numeric HTML entities DOMPurify's output can contain
- * are decoded. This is the single HTML-aware helper; the resolver itself works
- * on the plain string it returns, in whose coordinate space task 15.6 paints the
- * highlight.
+ * Extract the plain text of rendered card HTML: the exact character sequence a
+ * browser exposes as the body's `textContent`. This is the single HTML-aware
+ * helper; the resolver itself works on the plain string it returns, in whose
+ * coordinate space task 15.6 paints the highlight (walking the rendered DOM's
+ * text nodes and accumulating offsets yields the very same sequence).
+ *
+ * A real HTML parser is used, not a tag-stripping regex. A regex such as
+ * `/<[^>]*>/g` corrupts the text whenever an attribute value contains a literal
+ * `>` (e.g. a Markdown link title `[t](f.md "a > b")`, or the broken-link span
+ * whose `title` interpolates an unresolved href): DOMPurify serialises such a
+ * `>` verbatim inside the quoted value, so the regex ends the "tag" early and
+ * leaks attribute characters into the output, shifting every downstream offset.
+ * We reuse `isomorphic-dompurify` (already the renderer's sanitiser, so no new
+ * dependency) with `RETURN_DOM` to obtain a parsed DOM node and read its
+ * `textContent`: tags are dropped with no synthetic whitespace and every named
+ * and numeric HTML entity is decoded exactly as the browser would.
  */
 export function extractTextFromHtml(html: string): string {
-	const withoutTags = html.replace(/<[^>]*>/g, '');
-	return withoutTags.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (_match, body: string) =>
-		decodeEntity(body)
-	);
+	const node = DOMPurify.sanitize(html, { RETURN_DOM: true }) as unknown as {
+		textContent: string | null;
+	};
+	return node.textContent ?? '';
 }
 
 /** True when `text` contains `slice` ending exactly at index `end` (exclusive). */
