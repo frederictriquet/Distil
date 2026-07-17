@@ -7,6 +7,7 @@
 	// CardActions to the current route's shared handlers.
 	import Card from '$lib/components/Card.svelte';
 	import CardActions from '$lib/components/CardActions.svelte';
+	import AnnotationCapture from '$lib/components/AnnotationCapture.svelte';
 
 	interface CardView {
 		id: number;
@@ -36,6 +37,10 @@
 		bookmarkedCategoryIds: number[];
 		showBack?: boolean;
 	} = $props();
+
+	// The rendered body element, handed to the annotation capture popup (task
+	// 15.4) so it only captures selections made inside the card body.
+	let bodyEl: HTMLElement | null = $state(null);
 </script>
 
 <Card>
@@ -79,7 +84,7 @@
 			     in $lib/server/markdown (roadmap section 7), so injecting it as HTML
 			     here is safe. -->
 			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-			<div class="fiche__body">{@html card.bodyHtml}</div>
+			<div class="fiche__body" bind:this={bodyEl}>{@html card.bodyHtml}</div>
 		{:else}
 			<p class="fiche__body fiche__body--empty">This card has no content yet.</p>
 		{/if}
@@ -87,6 +92,10 @@
 </Card>
 
 <CardActions {card} {categories} {bookmarkedCategoryIds} {showBack} />
+
+<!-- Text-selection capture popup (task 15.4), shared by every card route through
+     CardView just like the action bar. -->
+<AnnotationCapture cardId={card.id} {bodyEl} />
 
 <style>
 	.fiche {

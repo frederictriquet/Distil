@@ -39,5 +39,6 @@ export const actions: Actions = {
 	more: async (event) => cardActions.more(event),
 	less: async (event) => cardActions.less(event),
 	createCategory: async (event) => cardActions.createCategory(event),
-	addBookmarks: async (event) => cardActions.addBookmarks(event)
+	addBookmarks: async (event) => cardActions.addBookmarks(event),
+	annotate: async (event) => cardActions.annotate(event)
 };

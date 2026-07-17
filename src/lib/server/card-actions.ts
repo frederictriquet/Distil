@@ -26,6 +26,7 @@ import {
 	parseCategoryName,
 	type BookmarkCategory
 } from '$lib/server/bookmarks';
+import { createAnnotation, parseAnchor, parseNote } from '$lib/server/annotations';
 
 type Db = typeof db;
 
@@ -170,4 +171,51 @@ export async function addBookmarks({ request }: RequestEvent) {
 		success: true,
 		bookmarkedCategoryIds: listBookmarkedCategoryIdsForCard(db, cardId)
 	};
+}
+
+/**
+ * Create an annotation on the current card from a text selection captured in the
+ * body (task 15.4 client / 15.5 server). The client posts the card id, the note,
+ * and the TextQuoteSelector anchor (quote + prefix/suffix context + indicative
+ * start offset) derived from the DOM selection. Every externally supplied value
+ * is validated at this boundary through the annotations module: an invalid card
+ * id, an empty/oversized note, or a malformed anchor answer 400, and a card that
+ * no longer exists answers 404 via the handled foreign-key path (never a 500).
+ * Like the bookmark actions it returns the created row without redirecting, so
+ * the current card stays on screen and the client can reflect it without a
+ * redraw.
+ */
+export async function annotate({ request }: RequestEvent) {
+	const data = await request.formData();
+
+	const cardId = parseId(data.get('cardId'));
+	if (cardId === null) {
+		return fail(400, { action: 'annotate', error: 'Invalid card id.' });
+	}
+
+	const noteResult = parseNote(data.get('note'));
+	if (!noteResult.ok) {
+		return fail(400, { action: 'annotate', error: noteResult.error });
+	}
+
+	// The quote/prefix/suffix are compared verbatim against the rendered body's
+	// plain text by the anchor resolver, so they must NOT be trimmed here. The
+	// offset arrives as a form string; coerce it to a number so parseAnchor can
+	// reject a missing/non-numeric value at the boundary.
+	const rawOffset = data.get('startOffset');
+	const anchorResult = parseAnchor({
+		quote: data.get('quote'),
+		prefix: data.get('prefix'),
+		suffix: data.get('suffix'),
+		startOffset: typeof rawOffset === 'string' ? Number(rawOffset) : Number.NaN
+	});
+	if (!anchorResult.ok) {
+		return fail(400, { action: 'annotate', error: anchorResult.error });
+	}
+
+	const result = createAnnotation(db, cardId, noteResult.value, anchorResult.value);
+	if (!result.ok) {
+		return fail(404, { action: 'annotate', error: 'This card no longer exists.' });
+	}
+	return { action: 'annotate', success: true, annotation: result.value };
 }
