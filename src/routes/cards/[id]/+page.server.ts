@@ -8,10 +8,11 @@
 // This route sits behind the access guard in hooks.server.ts, so it is only
 // reachable with a valid session.
 
-import { error } from '@sveltejs/kit';
+import { error, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { getCardById } from '$lib/server/card';
+import * as cardActions from '$lib/server/card-actions';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const id = Number(params.id);
@@ -24,5 +25,19 @@ export const load: PageServerLoad = async ({ params }) => {
 		error(404, 'Card not found');
 	}
 
-	return { card };
+	// The same action bar the study view shows is available on every card
+	// (next / theme weighting / bookmark), so this consultation page loads the
+	// bookmark panel data too (task 8.7).
+	return { card, ...cardActions.loadBookmarkData(db, card.id) };
+};
+
+// Every card exposes the study action bar however it is reached; these keys
+// delegate to the shared handlers so the behavior is identical across routes.
+// Only named actions are used, per the project's SvelteKit action rules.
+export const actions: Actions = {
+	next: async () => cardActions.next(),
+	more: async (event) => cardActions.more(event),
+	less: async (event) => cardActions.less(event),
+	createCategory: async (event) => cardActions.createCategory(event),
+	addBookmarks: async (event) => cardActions.addBookmarks(event)
 };

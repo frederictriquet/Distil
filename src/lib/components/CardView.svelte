@@ -2,25 +2,45 @@
 	// Card display used by the consultation page (roadmap section 10): the card's
 	// metadata (title, theme, level, source) and its markdown body rendered to
 	// sanitized HTML (section 7). This mirrors the study view's card presentation
-	// so a card reads the same however it is reached.
+	// so a card reads the same however it is reached — including the same action
+	// bar (next / bookmark / theme weighting) on every card, wired through
+	// CardActions to the current route's shared handlers.
 	import Card from '$lib/components/Card.svelte';
+	import CardActions from '$lib/components/CardActions.svelte';
 
 	interface CardView {
+		id: number;
 		title: string;
 		theme: string | null;
 		level: string | null;
 		source: string | null;
-		/** Whether the card is still active; inactive cards render read-only. */
-		active: boolean;
+		/**
+		 * Whether the card is still active; inactive cards render with an archived
+		 * banner. Defaults to active for callers (the study view) that only ever
+		 * pass freshly drawn, active cards.
+		 */
+		active?: boolean;
 		bodyHtml: string;
 	}
 
-	let { card }: { card: CardView } = $props();
+	type Category = { id: number; name: string };
+
+	let {
+		card,
+		categories,
+		bookmarkedCategoryIds,
+		showBack = false
+	}: {
+		card: CardView;
+		categories: Category[];
+		bookmarkedCategoryIds: number[];
+		showBack?: boolean;
+	} = $props();
 </script>
 
 <Card>
 	<article class="fiche">
-		{#if !card.active}
+		{#if card.active === false}
 			<!-- The card was deactivated by a sync (its file left the repo), but the
 			     link, bookmark or direct URL that led here still resolves: show it
 			     read-only with a clear archived banner rather than 404-ing or
@@ -65,6 +85,8 @@
 		{/if}
 	</article>
 </Card>
+
+<CardActions {card} {categories} {bookmarkedCategoryIds} {showBack} />
 
 <style>
 	.fiche {
