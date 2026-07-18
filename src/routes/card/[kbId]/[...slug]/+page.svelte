@@ -19,6 +19,7 @@
 		card={data.card}
 		categories={data.categories}
 		bookmarkedCategoryIds={data.bookmarkedCategoryIds}
+		annotations={data.annotations}
 		showBack
 	/>
 </PageContainer>

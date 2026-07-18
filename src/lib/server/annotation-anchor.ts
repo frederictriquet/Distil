@@ -170,3 +170,108 @@ export function resolveAnnotationsForText(
 			: { annotation, status: 'detached' };
 	});
 }
+
+/** A resolved character range tagged with the annotation id it belongs to. */
+export interface AnnotatedRange extends AnchorRange {
+	/** Id of the annotation whose quote this range covers. */
+	id: number;
+}
+
+/**
+ * Wrap each resolved annotation range in the already-sanitized body `html` with
+ * a `<mark class="annotation-highlight" data-annotation-id="…">` element, so the
+ * highlight ships pre-rendered on the server (task 15.6) and the client only has
+ * to style and click it. The ranges are in the plain-text coordinate space of
+ * `extractTextFromHtml` -- the very sequence the browser exposes as the body's
+ * `textContent` (see this module's header) -- so they are mapped back onto the
+ * DOM by walking the parsed body's text nodes and accumulating their lengths.
+ *
+ * Sanitization is preserved by construction: we parse the input through the same
+ * DOMPurify pass used elsewhere (so nothing unsanitized can slip in), then only
+ * ever *split existing text nodes* and wrap fragments of them in freshly created
+ * `<mark>` elements whose text is set via `textContent` (never parsed as HTML).
+ * No attribute or element from the input is rewritten, so the internal-link
+ * rewriting done upstream (task 7.2) is left untouched -- a highlight that falls
+ * inside a link simply nests a `<mark>` within the surviving `<a>`.
+ *
+ * A range spanning an element boundary (its `start` and `end` land in different
+ * text nodes) is painted per node, yielding one `<mark>` per node that all carry
+ * the same `data-annotation-id`. Overlapping ranges are handled by cutting each
+ * text node at every range boundary and tagging a segment with every annotation
+ * id that covers it (space-separated), so no highlight is lost. Detached
+ * annotations have no range and are simply never passed here.
+ */
+export function decorateAnnotatedHtml(html: string, ranges: AnnotatedRange[]): string {
+	if (ranges.length === 0) {
+		return html;
+	}
+	const body = DOMPurify.sanitize(html, { RETURN_DOM: true }) as unknown as {
+		innerHTML: string;
+		ownerDocument: Document;
+		childNodes: NodeListOf<ChildNode>;
+	};
+	const doc = body.ownerDocument;
+
+	// Collect every text node with its absolute start offset in the plain text
+	// BEFORE mutating, so offsets stay valid while nodes are replaced afterwards.
+	const textNodes: { node: Text; start: number }[] = [];
+	let offset = 0;
+	const walk = (node: Node): void => {
+		for (const child of Array.from(node.childNodes)) {
+			if (child.nodeType === 3) {
+				const text = child as Text;
+				textNodes.push({ node: text, start: offset });
+				offset += text.data.length;
+			} else if (child.nodeType === 1) {
+				walk(child);
+			}
+		}
+	};
+	walk(body as unknown as Node);
+
+	for (const { node, start } of textNodes) {
+		const text = node.data;
+		const nodeEnd = start + text.length;
+
+		// The cut points within this node: 0, its length, and every range
+		// boundary that falls strictly inside it.
+		const points = new Set<number>([0, text.length]);
+		for (const range of ranges) {
+			if (range.end <= start || range.start >= nodeEnd) {
+				continue;
+			}
+			points.add(Math.max(0, range.start - start));
+			points.add(Math.min(text.length, range.end - start));
+		}
+		const cuts = [...points].sort((a, b) => a - b);
+
+		const fragment = doc.createDocumentFragment();
+		let marked = false;
+		for (let i = 0; i < cuts.length - 1; i += 1) {
+			const segStart = cuts[i];
+			const segEnd = cuts[i + 1];
+			if (segStart === segEnd) {
+				continue;
+			}
+			const segText = text.slice(segStart, segEnd);
+			const absStart = start + segStart;
+			const absEnd = start + segEnd;
+			const covering = ranges.filter((range) => range.start <= absStart && range.end >= absEnd);
+			if (covering.length > 0) {
+				const mark = doc.createElement('mark');
+				mark.className = 'annotation-highlight';
+				mark.setAttribute('data-annotation-id', covering.map((range) => range.id).join(' '));
+				mark.textContent = segText;
+				fragment.appendChild(mark);
+				marked = true;
+			} else {
+				fragment.appendChild(doc.createTextNode(segText));
+			}
+		}
+		if (marked && node.parentNode) {
+			node.parentNode.replaceChild(fragment, node);
+		}
+	}
+
+	return body.innerHTML;
+}

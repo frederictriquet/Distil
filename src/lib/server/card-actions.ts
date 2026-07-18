@@ -26,9 +26,74 @@ import {
 	parseCategoryName,
 	type BookmarkCategory
 } from '$lib/server/bookmarks';
-import { createAnnotation, parseAnchor, parseNote } from '$lib/server/annotations';
+import {
+	createAnnotation,
+	deleteAnnotation as removeAnnotation,
+	listAnnotationsForCard,
+	parseAnchor,
+	parseNote,
+	updateAnnotationNote
+} from '$lib/server/annotations';
+import {
+	decorateAnnotatedHtml,
+	extractTextFromHtml,
+	resolveAnnotationsForText,
+	type AnnotatedRange
+} from '$lib/server/annotation-anchor';
 
 type Db = typeof db;
+
+/**
+ * A card's annotation as the view consumes it (tasks 15.6/15.7): its id, note
+ * and original quote, plus whether its anchor no longer resolves against the
+ * current body (`detached`). Detached annotations are still listed in the panel
+ * (task 15.7) but carry no body highlight (their full UX is task 15.9).
+ */
+export interface AnnotationView {
+	id: number;
+	note: string;
+	quote: string;
+	detached: boolean;
+}
+
+/**
+ * The annotation data every card view needs (tasks 15.6/15.7), loaded from
+ * `load` per the project's rule that page data comes from `load`. Given the
+ * card's already-sanitized body HTML, it lists the card's annotations, resolves
+ * each anchor against the rendered body's plain text (task 15.3), returns them
+ * tagged resolved/detached for the panel, and returns the body HTML with the
+ * resolved spans marked for highlighting (task 15.6, decorated server-side so
+ * the sanitization guarantee is preserved). Passing no card id (nothing drawn)
+ * yields an empty list and the body unchanged, keeping the returned shape stable.
+ */
+export function loadAnnotationData(
+	database: Db,
+	bodyHtml: string,
+	cardId?: number
+): { annotations: AnnotationView[]; bodyHtml: string } {
+	if (cardId === undefined) {
+		return { annotations: [], bodyHtml };
+	}
+	const stored = listAnnotationsForCard(database, cardId);
+	const resolved = resolveAnnotationsForText(extractTextFromHtml(bodyHtml), stored);
+
+	const ranges: AnnotatedRange[] = [];
+	for (const item of resolved) {
+		if (item.status === 'resolved') {
+			ranges.push({ id: item.annotation.id, start: item.range.start, end: item.range.end });
+		}
+	}
+
+	return {
+		annotations: resolved.map((item) => ({
+			id: item.annotation.id,
+			note: item.annotation.note,
+			quote: item.annotation.quote,
+			detached: item.status === 'detached'
+		})),
+		bodyHtml: decorateAnnotatedHtml(bodyHtml, ranges)
+	};
+}
 
 /**
  * The bookmark panel data every card view needs (task 8.7): the full category
@@ -218,4 +283,56 @@ export async function annotate({ request }: RequestEvent) {
 		return fail(404, { action: 'annotate', error: 'This card no longer exists.' });
 	}
 	return { action: 'annotate', success: true, annotation: result.value };
+}
+
+/**
+ * Update an annotation's note from its consultation panel (task 15.8). The note
+ * is validated at the boundary through the annotations module (blank/oversized
+ * answer 400), and an id that matches no annotation answers 404 rather than a
+ * silent ok or a 500. Like the bookmark actions it returns the updated row
+ * without redirecting, so the current card stays on screen and the client can
+ * reflect the change without a study-card redraw.
+ */
+export async function updateAnnotation({ request }: RequestEvent) {
+	const data = await request.formData();
+
+	const id = parseId(data.get('annotationId'));
+	if (id === null) {
+		return fail(400, { action: 'updateAnnotation', error: 'Invalid annotation id.' });
+	}
+
+	const noteResult = parseNote(data.get('note'));
+	if (!noteResult.ok) {
+		return fail(400, { action: 'updateAnnotation', error: noteResult.error });
+	}
+
+	const updated = updateAnnotationNote(db, id, noteResult.value);
+	if (!updated) {
+		return fail(404, { action: 'updateAnnotation', error: 'This annotation no longer exists.' });
+	}
+	return {
+		action: 'updateAnnotation',
+		success: true,
+		annotation: { id: updated.id, note: updated.note, quote: updated.quote }
+	};
+}
+
+/**
+ * Delete an annotation from its consultation panel (task 15.8). An id that
+ * matches no annotation answers 404 rather than a silent ok. Returns the removed
+ * id without redirecting so the client can drop it from the panel without a
+ * study-card redraw.
+ */
+export async function deleteAnnotation({ request }: RequestEvent) {
+	const data = await request.formData();
+
+	const id = parseId(data.get('annotationId'));
+	if (id === null) {
+		return fail(400, { action: 'deleteAnnotation', error: 'Invalid annotation id.' });
+	}
+
+	if (!removeAnnotation(db, id)) {
+		return fail(404, { action: 'deleteAnnotation', error: 'This annotation no longer exists.' });
+	}
+	return { action: 'deleteAnnotation', success: true, id };
 }

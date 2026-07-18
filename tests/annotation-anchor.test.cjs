@@ -16,7 +16,11 @@
 //   - extractTextFromHtml turning rendered HTML into the plain-text coordinate
 //     space the resolver works in;
 //   - the per-card helper resolveAnnotationsForText tagging a mix of resolved
-//     and detached annotations, in input order.
+//     and detached annotations, in input order;
+//   - decorateAnnotatedHtml (task 15.6) wrapping resolved ranges in a
+//     <mark class="annotation-highlight" data-annotation-id> without breaking the
+//     surrounding markup or the internal-link rewriting, handling overlaps, a
+//     no-op empty range list, and re-sanitizing its input.
 //
 // This is a pure, DB-free, SvelteKit-free module, so it is exercised directly
 // rather than through a running server. It is still loaded through `tsx` (as
@@ -62,6 +66,8 @@ const results = calls.map((c) => {
 			return mod.resolveAnnotationsForText(c.text, c.annotations);
 		case 'extractTextFromHtml':
 			return mod.extractTextFromHtml(c.html);
+		case 'decorateAnnotatedHtml':
+			return mod.decorateAnnotatedHtml(c.html, c.ranges);
 		default:
 			throw new Error('unknown harness fn: ' + c.fn);
 	}
@@ -180,6 +186,52 @@ const CALLS = [
 			annotation(1, 'still here', anchor('that line', { prefix: 'and ', suffix: '', startOffset: 19 })),
 			annotation(2, 'orphaned', anchor('deleted phrase', { prefix: '', suffix: '', startOffset: 0 }))
 		]
+	},
+	// decoration (task 15.6): wrap a resolved range inside an inline element,
+	// preserving the surrounding markup.
+	{
+		id: 'decorateSimple',
+		fn: 'decorateAnnotatedHtml',
+		// plain text: "Hello world and more"; "world" is at 6..11.
+		html: '<p>Hello <strong>world</strong> and more</p>',
+		ranges: [{ id: 1, start: 6, end: 11 }]
+	},
+	// decoration: a highlight inside a link must keep the <a href> intact (the
+	// internal-link rewriting of task 7.2 must survive), nesting the mark within.
+	{
+		id: 'decorateLink',
+		fn: 'decorateAnnotatedHtml',
+		// plain text: "see alpha beta end"; "beta" is at 10..14, inside the link.
+		html: '<p>see <a href="/card/1/x">alpha beta</a> end</p>',
+		ranges: [{ id: 7, start: 10, end: 14 }]
+	},
+	// decoration: overlapping ranges cut the text node at every boundary and the
+	// shared segment is tagged with every covering annotation id (space-joined).
+	{
+		id: 'decorateOverlap',
+		fn: 'decorateAnnotatedHtml',
+		// plain text: "abcdef"; id 1 covers abcd (0..4), id 2 covers cdef (2..6).
+		html: '<p>abcdef</p>',
+		ranges: [
+			{ id: 1, start: 0, end: 4 },
+			{ id: 2, start: 2, end: 6 }
+		]
+	},
+	// decoration: no ranges -> the HTML is returned unchanged.
+	{
+		id: 'decorateNone',
+		fn: 'decorateAnnotatedHtml',
+		html: '<p>Hello world</p>',
+		ranges: []
+	},
+	// decoration: the input is re-sanitized, so a hostile payload cannot slip in
+	// through this step; ranges are in the SANITIZED text's coordinate space.
+	{
+		id: 'decorateSanitizes',
+		fn: 'decorateAnnotatedHtml',
+		// sanitized plain text: "hi there"; "there" is at 3..8.
+		html: '<p>hi <script>alert(1)</script>there</p>',
+		ranges: [{ id: 9, start: 3, end: 8 }]
 	}
 ];
 
@@ -309,5 +361,42 @@ describe('resolveAnnotationsForText per-card helper (task 15.3)', () => {
 		assert.equal(detached.status, 'detached');
 		assert.equal(detached.annotation.id, 2);
 		assert.equal(detached.annotation.quote, 'deleted phrase');
+	});
+});
+
+describe('decorateAnnotatedHtml (task 15.6)', () => {
+	test('wraps a resolved range in a <mark> carrying its annotation id, inside its inline element', () => {
+		assert.equal(
+			outputs.decorateSimple,
+			'<p>Hello <strong><mark class="annotation-highlight" data-annotation-id="1">world</mark></strong> and more</p>'
+		);
+	});
+
+	test('keeps an internal link intact when the highlight falls inside it (task 7.2 rewriting survives)', () => {
+		assert.equal(
+			outputs.decorateLink,
+			'<p>see <a href="/card/1/x">alpha <mark class="annotation-highlight" data-annotation-id="7">beta</mark></a> end</p>'
+		);
+	});
+
+	test('cuts a text node at every boundary and tags a shared segment with every covering id', () => {
+		assert.equal(
+			outputs.decorateOverlap,
+			'<p><mark class="annotation-highlight" data-annotation-id="1">ab</mark>' +
+				'<mark class="annotation-highlight" data-annotation-id="1 2">cd</mark>' +
+				'<mark class="annotation-highlight" data-annotation-id="2">ef</mark></p>'
+		);
+	});
+
+	test('returns the HTML unchanged when there are no ranges', () => {
+		assert.equal(outputs.decorateNone, '<p>Hello world</p>');
+	});
+
+	test('re-sanitizes the input, so a hostile payload cannot slip in through decoration', () => {
+		assert.doesNotMatch(outputs.decorateSanitizes, /<script>|alert\(1\)/);
+		assert.equal(
+			outputs.decorateSanitizes,
+			'<p>hi <mark class="annotation-highlight" data-annotation-id="9">there</mark></p>'
+		);
 	});
 });

@@ -47,6 +47,7 @@
 			card={data.card}
 			categories={data.categories}
 			bookmarkedCategoryIds={data.bookmarkedCategoryIds}
+			annotations={data.annotations}
 		/>
 	{:else if data.kb && data.kb.total === 0}
 		<!-- No card to study, and the reason is precise (task 12.2): no knowledge
