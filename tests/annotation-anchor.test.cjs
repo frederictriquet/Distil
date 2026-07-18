@@ -20,7 +20,8 @@
 //   - decorateAnnotatedHtml (task 15.6) wrapping resolved ranges in a
 //     <mark class="annotation-highlight" data-annotation-id> without breaking the
 //     surrounding markup or the internal-link rewriting, handling overlaps, a
-//     no-op empty range list, and re-sanitizing its input.
+//     no-op empty range list, re-sanitizing its input, and preserving the
+//     target/rel attributes markdown.ts adds to external links.
 //
 // This is a pure, DB-free, SvelteKit-free module, so it is exercised directly
 // rather than through a running server. It is still loaded through `tsx` (as
@@ -232,6 +233,17 @@ const CALLS = [
 		// sanitized plain text: "hi there"; "there" is at 3..8.
 		html: '<p>hi <script>alert(1)</script>there</p>',
 		ranges: [{ id: 9, start: 3, end: 8 }]
+	},
+	// decoration must not lose the `target="_blank"` / `rel="noopener noreferrer"`
+	// that markdown.ts's canonical render puts on external links (regression test
+	// for the bug where decorateAnnotatedHtml re-sanitized with DOMPurify defaults,
+	// which strip `target`): the two must share the same sanitize options.
+	{
+		id: 'decorateExternalLink',
+		fn: 'decorateAnnotatedHtml',
+		// plain text: "see alpha beta end"; "beta" is at 10..14, inside the link.
+		html: '<p>see <a href="https://example.com/" target="_blank" rel="noopener noreferrer">alpha beta</a> end</p>',
+		ranges: [{ id: 7, start: 10, end: 14 }]
 	}
 ];
 
@@ -397,6 +409,14 @@ describe('decorateAnnotatedHtml (task 15.6)', () => {
 		assert.equal(
 			outputs.decorateSanitizes,
 			'<p>hi <mark class="annotation-highlight" data-annotation-id="9">there</mark></p>'
+		);
+	});
+
+	test('preserves target="_blank" and rel="noopener noreferrer" on an external link it highlights', () => {
+		assert.equal(
+			outputs.decorateExternalLink,
+			'<p>see <a href="https://example.com/" target="_blank" rel="noopener noreferrer">alpha ' +
+				'<mark class="annotation-highlight" data-annotation-id="7">beta</mark></a> end</p>'
 		);
 	});
 });

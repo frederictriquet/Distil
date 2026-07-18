@@ -25,6 +25,7 @@
 import DOMPurify from 'isomorphic-dompurify';
 
 import type { Annotation, AnnotationAnchor } from './annotations';
+import { SANITIZE_OPTIONS } from './markdown';
 
 /** A resolved character range within the plain text: `[start, end)`. */
 export interface AnchorRange {
@@ -69,7 +70,7 @@ export type ResolvedAnnotation =
  * and numeric HTML entity is decoded exactly as the browser would.
  */
 export function extractTextFromHtml(html: string): string {
-	const node = DOMPurify.sanitize(html, { RETURN_DOM: true }) as unknown as {
+	const node = DOMPurify.sanitize(html, { ...SANITIZE_OPTIONS, RETURN_DOM: true }) as unknown as {
 		textContent: string | null;
 	};
 	return node.textContent ?? '';
@@ -205,7 +206,7 @@ export function decorateAnnotatedHtml(html: string, ranges: AnnotatedRange[]): s
 	if (ranges.length === 0) {
 		return html;
 	}
-	const body = DOMPurify.sanitize(html, { RETURN_DOM: true }) as unknown as {
+	const body = DOMPurify.sanitize(html, { ...SANITIZE_OPTIONS, RETURN_DOM: true }) as unknown as {
 		innerHTML: string;
 		ownerDocument: Document;
 		childNodes: NodeListOf<ChildNode>;

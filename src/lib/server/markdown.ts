@@ -48,6 +48,22 @@ export interface CardRenderContext {
 	contentSubdir: string;
 }
 
+/**
+ * The single source of truth for the DOMPurify sanitize options used on card
+ * body HTML. `renderCardMarkdown` below is the canonical render, and
+ * `annotation-anchor.ts` re-sanitizes the already-rendered HTML while
+ * decorating annotation highlights (task 15.6); both must use these exact
+ * options so the second pass can never drop an attribute the first pass kept
+ * (e.g. the `target` this config adds to external links).
+ */
+export const SANITIZE_OPTIONS = {
+	// Keep the syntax-highlighting classes and the safe link attributes the
+	// renderer emits; forbid anything that could execute.
+	ADD_ATTR: ['target'],
+	FORBID_TAGS: ['style'],
+	FORBID_ATTR: ['style']
+};
+
 /** A single Marked instance carrying the (context-free) highlight extension. */
 const highlighter = markedHighlight({
 	langPrefix: 'hljs language-',
@@ -215,11 +231,5 @@ export function renderCardMarkdown(
 	});
 	const rawHtml = marked.parse(content, { async: false }) as string;
 
-	return DOMPurify.sanitize(rawHtml, {
-		// Keep the syntax-highlighting classes and the safe link attributes the
-		// renderer emits; forbid anything that could execute.
-		ADD_ATTR: ['target'],
-		FORBID_TAGS: ['style'],
-		FORBID_ATTR: ['style']
-	});
+	return DOMPurify.sanitize(rawHtml, SANITIZE_OPTIONS);
 }
