@@ -65,7 +65,8 @@ const EXPECTED_TABLES = [
 	'theme_preferences',
 	'bookmark_categories',
 	'bookmarks',
-	'reading_history'
+	'reading_history',
+	'annotations'
 ].sort();
 
 describe('applying the migration creates the SQLite database with the expected tables (task 2.3)', () => {

@@ -19,4 +19,7 @@ vite.config.ts.timestamp-*
 # et cache des dépôts KB clonés (ex. data/kb-cache/).
 /data/
 
+# Local editor / IDE config
+.vscode/
+
 .orchestrator/

@@ -2,25 +2,55 @@
 	// Card display used by the consultation page (roadmap section 10): the card's
 	// metadata (title, theme, level, source) and its markdown body rendered to
 	// sanitized HTML (section 7). This mirrors the study view's card presentation
-	// so a card reads the same however it is reached.
+	// so a card reads the same however it is reached — including the same action
+	// bar (next / bookmark / theme weighting) on every card, wired through
+	// CardActions to the current route's shared handlers.
 	import Card from '$lib/components/Card.svelte';
+	import CardActions from '$lib/components/CardActions.svelte';
+	import AnnotationCapture from '$lib/components/AnnotationCapture.svelte';
+	import AnnotationsPanel from '$lib/components/AnnotationsPanel.svelte';
 
 	interface CardView {
+		id: number;
 		title: string;
 		theme: string | null;
 		level: string | null;
 		source: string | null;
-		/** Whether the card is still active; inactive cards render read-only. */
-		active: boolean;
+		/**
+		 * Whether the card is still active; inactive cards render with an archived
+		 * banner. Defaults to active for callers (the study view) that only ever
+		 * pass freshly drawn, active cards.
+		 */
+		active?: boolean;
 		bodyHtml: string;
 	}
 
-	let { card }: { card: CardView } = $props();
+	type Category = { id: number; name: string };
+	type AnnotationView = { id: number; note: string; quote: string; detached: boolean };
+
+	let {
+		card,
+		categories,
+		bookmarkedCategoryIds,
+		annotations = [],
+		showBack = false
+	}: {
+		card: CardView;
+		categories: Category[];
+		bookmarkedCategoryIds: number[];
+		/** The card's annotations (tasks 15.6/15.7), tagged resolved/detached. */
+		annotations?: AnnotationView[];
+		showBack?: boolean;
+	} = $props();
+
+	// The rendered body element, handed to the annotation capture popup (task
+	// 15.4) so it only captures selections made inside the card body.
+	let bodyEl: HTMLElement | null = $state(null);
 </script>
 
 <Card>
 	<article class="fiche">
-		{#if !card.active}
+		{#if card.active === false}
 			<!-- The card was deactivated by a sync (its file left the repo), but the
 			     link, bookmark or direct URL that led here still resolves: show it
 			     read-only with a clear archived banner rather than 404-ing or
@@ -59,12 +89,23 @@
 			     in $lib/server/markdown (roadmap section 7), so injecting it as HTML
 			     here is safe. -->
 			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-			<div class="fiche__body">{@html card.bodyHtml}</div>
+			<div class="fiche__body" bind:this={bodyEl}>{@html card.bodyHtml}</div>
 		{:else}
 			<p class="fiche__body fiche__body--empty">This card has no content yet.</p>
 		{/if}
 	</article>
 </Card>
+
+<CardActions {card} {categories} {bookmarkedCategoryIds} {showBack} />
+
+<!-- Text-selection capture popup (task 15.4), shared by every card route through
+     CardView just like the action bar. -->
+<AnnotationCapture cardId={card.id} {bodyEl} />
+
+<!-- Annotation list & consultation panel (tasks 15.6/15.7/15.8): the entry point
+     (count), the list, and per-annotation edit/delete. Clicking a highlighted
+     span in the body (decorated server-side) also surfaces its annotation. -->
+<AnnotationsPanel cardId={card.id} {annotations} {bodyEl} />
 
 <style>
 	.fiche {
@@ -136,6 +177,19 @@
 		color: var(--color-text-muted);
 		text-decoration: line-through;
 		cursor: not-allowed;
+	}
+
+	/* Resolved annotation highlight (task 15.6), server-rendered as a
+	   <mark class="annotation-highlight"> around the annotated span. Styled with
+	   theme tokens only so it stays legible in light and dark; clickable to open
+	   the annotation (handled by AnnotationsPanel). */
+	.fiche__body :global(mark.annotation-highlight) {
+		background-color: var(--color-surface-muted);
+		color: inherit;
+		border-bottom: 2px solid var(--color-primary);
+		border-radius: var(--radius-sm);
+		padding: 0 0.1em;
+		cursor: pointer;
 	}
 
 	.fiche__body--empty {

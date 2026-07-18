@@ -46,7 +46,8 @@ const EXPECTED_TABLES = [
 	'theme_preferences',
 	'bookmark_categories',
 	'bookmarks',
-	'reading_history'
+	'reading_history',
+	'annotations'
 ].sort();
 
 // Harness executed by `tsx` (in a fresh process each time) so it loads the

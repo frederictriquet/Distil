@@ -6,6 +6,7 @@
 //   - themePreferences: per-theme weighting used by the weighted random draw.
 //   - bookmarkCategories / bookmarks : user bookmarks grouped by category.
 //   - readingHistory  : one row per card view, used to avoid recently seen cards.
+//   - annotations     : user notes anchored to a quoted span of a card's body.
 //
 // Design notes:
 //   - Cards are soft-deleted through the `active` flag: reconciliation
@@ -151,4 +152,46 @@ export const readingHistory = sqliteTable(
 			.default(sql`(unixepoch())`)
 	},
 	(table) => [index('reading_history_card_id_idx').on(table.cardId), index('reading_history_read_at_idx').on(table.readAt)]
+);
+
+/**
+ * A user note anchored to a quoted span of a card's rendered body.
+ *
+ * The anchor follows the W3C Web Annotation model's TextQuoteSelector: the
+ * exact selected text (`quote`) plus a short `prefix`/`suffix` context around
+ * it are the source of truth for re-locating the span after a re-sync may have
+ * changed the rendered HTML; `startOffset` is only an indicative hint (later
+ * resolution/detach handling — ROADMAP 15.3 — is out of scope here).
+ *
+ * Like bookmarks and reading history, annotations are user data: cascade fires
+ * only on a genuine card deletion (or a KB deletion cascading to its cards), so
+ * a soft-delete (setting `cards.active = false`) never removes them.
+ */
+export const annotations = sqliteTable(
+	'annotations',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		/** Annotated card; cascades only on a genuine card deletion. */
+		cardId: integer('card_id')
+			.notNull()
+			.references(() => cards.id, { onDelete: 'cascade' }),
+		/** The annotation text body. */
+		note: text('note').notNull(),
+		/** The exact quoted (selected) text — the TextQuoteSelector source of truth. */
+		quote: text('quote').notNull(),
+		/** Short context immediately before the quote (may be empty at the start of the body). */
+		prefix: text('prefix').notNull().default(''),
+		/** Short context immediately after the quote (may be empty at the end of the body). */
+		suffix: text('suffix').notNull().default(''),
+		/** Indicative character offset of the quote into the rendered body (a hint only). */
+		startOffset: integer('start_offset').notNull().default(0),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`),
+		updatedAt: integer('updated_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+			.$onUpdate(() => new Date())
+	},
+	(table) => [index('annotations_card_id_idx').on(table.cardId)]
 );

@@ -288,6 +288,23 @@ async function login(baseUrl) {
 	return cookiePair(setCookie);
 }
 
+/**
+ * Post a card form action, the way a classic (no-JS) form submission does.
+ * `Accept: text/html` makes SvelteKit answer with the real HTTP status for a
+ * fail()/redirect result (same convention as tests/study-view.test.cjs).
+ * `actionPath` is the full route-relative target, e.g. `/cards/10?/next`.
+ */
+function postAction(baseUrl, actionPath, { cookie, fields = {} } = {}) {
+	const headers = { accept: 'text/html' };
+	if (cookie) headers.cookie = cookie;
+	return fetch(`${baseUrl}${actionPath}`, {
+		method: 'POST',
+		redirect: 'manual',
+		headers,
+		body: new URLSearchParams(fields)
+	});
+}
+
 /** Open a short-lived raw connection to seed fixtures directly. */
 function withRawDb(dbPath, fn) {
 	const conn = new Database(dbPath);
@@ -388,6 +405,50 @@ describe('a card is addressable by numeric id at /cards/<id> (task 10.1, bookmar
 		assert.match(html, /This card has no content yet\./);
 	});
 
+	// Every card exposes the same study action bar however it is reached: the
+	// consultation page (bookmark navigation / internal link) must carry the
+	// full bar, not a read-only view.
+	test('GET /cards/<id> renders the shared action bar (next, bookmark, theme weighting, back)', async () => {
+		const res = await fetch(`${app.baseUrl}/cards/10`, { redirect: 'manual', headers: { cookie } });
+		assert.equal(res.status, 200);
+		const html = await res.text();
+		assert.match(html, /Next card/, 'the "Next card" action must be present');
+		assert.match(html, />\s*Bookmark\s*</, 'the "Bookmark" trigger must be present');
+		assert.match(html, /More of this theme/, 'theme weighting up must be present for a themed card');
+		assert.match(html, /Less of this theme/, 'theme weighting down must be present for a themed card');
+		assert.match(html, />\s*Back\s*</, 'a Back control must be present on the consultation view');
+	});
+
+	test('POST /cards/<id>?/next redirects to the study view for a fresh draw (task 8.4)', async () => {
+		const res = await postAction(app.baseUrl, '/cards/10?/next', { cookie });
+		assert.equal(res.status, 303);
+		assert.equal(res.headers.get('location'), '/');
+	});
+
+	test('the bookmark actions are wired to the consultation route end to end (task 8.7)', async () => {
+		const created = await postAction(app.baseUrl, '/cards/10?/createCategory', {
+			cookie,
+			fields: { name: 'From consultation' }
+		});
+		assert.equal(created.status, 200, 'creating a category from the consultation panel must succeed');
+
+		const categoryId = withRawDb(dbPath, (raw) =>
+			raw.prepare('SELECT id FROM bookmark_categories WHERE name = ?').get('From consultation')?.id
+		);
+		assert.ok(categoryId, 'the category created from the consultation route must be persisted');
+
+		const added = await postAction(app.baseUrl, '/cards/10?/addBookmarks', {
+			cookie,
+			fields: { cardId: '10', categoryId: String(categoryId) }
+		});
+		assert.equal(added.status, 200, 'bookmarking from the consultation panel must succeed');
+
+		const bookmarked = withRawDb(dbPath, (raw) =>
+			raw.prepare('SELECT 1 AS ok FROM bookmarks WHERE card_id = ? AND category_id = ?').get(10, categoryId)
+		);
+		assert.ok(bookmarked, 'the shared bookmark handler wired to the consultation route must persist the bookmark');
+	});
+
 	test('GET /cards/<id> for an id matching no card answers 404', async () => {
 		const res = await fetch(`${app.baseUrl}/cards/999999`, { redirect: 'manual', headers: { cookie } });
 		assert.equal(res.status, 404);
@@ -465,6 +526,15 @@ describe('a card is addressable by kb+slug at /card/<kbId>/<slug> (task 10.1, in
 		assert.match(html, /beginner/);
 		assert.match(html, /topics\/intro\.md/);
 		assert.match(html, /Slug with a slash body\./);
+	});
+
+	test('GET /card/<kbId>/<slug> renders the shared action bar (next, bookmark, back)', async () => {
+		const res = await fetch(`${app.baseUrl}/card/2/topics/intro`, { redirect: 'manual', headers: { cookie } });
+		assert.equal(res.status, 200);
+		const html = await res.text();
+		assert.match(html, /Next card/, 'the "Next card" action must be present on the by-slug route too');
+		assert.match(html, />\s*Bookmark\s*</, 'the "Bookmark" trigger must be present on the by-slug route too');
+		assert.match(html, />\s*Back\s*</, 'a Back control must be present on the by-slug consultation view');
 	});
 
 	test('GET /card/<kbId>/<slug> for a deactivated card still renders it (internal links must keep resolving)', async () => {

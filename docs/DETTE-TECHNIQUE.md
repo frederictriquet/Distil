@@ -42,6 +42,11 @@ Dettes identifiées par l'orchestrateur (`.orchestrator/backlog.md`, généré l
   - La regex du garde-fou « secret placeholder » manque les jeux de caractères base64url.
   - Attendu : valider la forme/le schéma des champs fournis de l'extérieur à la frontière serveur.
 
+- [ ] **`annotations-residual`** — Finitions résiduelles de la feature annotations (§15), findings de review non traités (arrêt volontaire des passes de polish)
+  - UX (majeur) : sur le popup de capture, Échap ferme le popup puis le rouvre aussitôt car la sélection de texte du corps reste active — effacer la sélection (ou geler la ré-évaluation) au dismiss.
+  - Validation : un `startOffset` vide (`''`) est accepté comme `0` au lieu d'être rejeté à la frontière dans `parseAnchor`.
+  - Robustesse : `hasSqliteErrorCode` peut boucler sur une chaîne `error.cause` cyclique (ajouter un garde de profondeur / ensemble visité).
+
 ## 🟡 Priorité basse
 
 - [ ] **`ui-foundations-polish`** — Finitions des fondations d'interface (fréq. 6)
