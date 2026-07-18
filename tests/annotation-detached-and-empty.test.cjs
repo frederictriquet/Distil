@@ -343,6 +343,13 @@ const DETACHED_NOTE = 'Was anchored to a sentence that the re-sync removed.';
 // Card 2 carries no annotations at all -- the empty-state fixture.
 const EMPTY_CARD_BODY = 'A plain card that nobody has annotated.';
 
+// Card 3 carries one detached and one resolvable annotation side by side, to
+// prove the `detached` flag actually discriminates between them rather than
+// happening to be the same value for every annotation on a card.
+const CONTRAST_CARD_BODY = 'Mitochondria produce energy for the cell.';
+const CONTRAST_RESOLVABLE_QUOTE = 'Mitochondria';
+const CONTRAST_DETACHED_QUOTE = 'nonexistent phrase';
+
 /** Seed a KB, a card whose body no longer contains its annotation, and a bare card. */
 function seedFixtures(dbPath) {
 	withRawDb(dbPath, (raw) => {
@@ -366,6 +373,21 @@ function seedFixtures(dbPath) {
 				'INSERT INTO annotations (id, card_id, note, quote, prefix, suffix, start_offset) VALUES (1, 1, ?, ?, ?, ?, ?)'
 			)
 			.run(DETACHED_NOTE, DETACHED_QUOTE, DETACHED_PREFIX, DETACHED_SUFFIX, 4);
+		raw
+			.prepare(
+				'INSERT INTO cards (id, kb_id, slug, title, theme, level, source_path, content, active) VALUES (3, 1, ?, ?, ?, ?, ?, ?, 1)'
+			)
+			.run('contrast', 'Contrast Card', 'biology', 'beginner', 'biology/contrast.md', CONTRAST_CARD_BODY);
+		raw
+			.prepare(
+				'INSERT INTO annotations (id, card_id, note, quote, prefix, suffix, start_offset) VALUES (2, 3, ?, ?, ?, ?, ?)'
+			)
+			.run('Detached sibling.', CONTRAST_DETACHED_QUOTE, '', '', 0);
+		raw
+			.prepare(
+				'INSERT INTO annotations (id, card_id, note, quote, prefix, suffix, start_offset) VALUES (3, 3, ?, ?, ?, ?, ?)'
+			)
+			.run('Resolvable sibling.', CONTRAST_RESOLVABLE_QUOTE, '', ' produce', 0);
 	});
 }
 
@@ -417,6 +439,25 @@ describe('detached annotations and empty state on the consultation route (tasks 
 		assert.equal(annotations[0].quote, DETACHED_QUOTE, 'it keeps its ORIGINAL quote');
 		assert.equal(annotations[0].note, DETACHED_NOTE);
 		assert.equal(annotations[0].detached, true, 'it must be flagged detached');
+	});
+
+	test('load flags exactly the detached annotation, not a resolvable sibling on the same card (task 15.9)', async () => {
+		// The per-card panel (AnnotationsPanel.svelte) renders a "Detached" badge
+		// straight off this `detached` flag once a user opens it -- client-mounted
+		// interactive behaviour this HTTP-only harness cannot drive (no headless
+		// browser in this stack). What IS verified end to end here is the flag the
+		// panel's badge is conditioned on, seeded on a dedicated card (card 3) so
+		// this stays isolated from the other fixtures' hardcoded counts: a
+		// genuinely resolvable annotation must NOT be flagged alongside a detached
+		// one, so this is a real discriminating check rather than a value that
+		// happens to always be true.
+		const annotations = await fetchAnnotations(app.baseUrl, '/cards/3/__data.json', cookie);
+		assert.equal(annotations.length, 2);
+		const detached = annotations.find((a) => a.quote === CONTRAST_DETACHED_QUOTE);
+		const resolvable = annotations.find((a) => a.quote === CONTRAST_RESOLVABLE_QUOTE);
+		assert.ok(detached && resolvable, 'both fixture annotations must be listed');
+		assert.equal(detached.detached, true, 'the non-matching quote must be flagged detached');
+		assert.equal(resolvable.detached, false, 'the matching quote must not be flagged detached');
 	});
 
 	test('a detached annotation carries no body highlight but keeps the entry point (task 15.9)', async () => {

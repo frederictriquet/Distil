@@ -137,6 +137,22 @@
 		}
 	}
 
+	/**
+	 * A selection-changing event (mouseup/keyup/touchend) coming from inside the
+	 * popup itself — typing in the note field, releasing Escape/Cancel — is not a
+	 * change to the document selection in the card body and must not re-run
+	 * `evaluateSelection`: doing so would needlessly re-evaluate on every
+	 * keystroke, and re-open the popup right after Escape/Cancel closed it (the
+	 * original body selection is still active at that point, since focusing the
+	 * note field programmatically never cleared it).
+	 */
+	function onSelectionEvent(event: Event): void {
+		if (popupEl && event.target instanceof Node && popupEl.contains(event.target)) {
+			return;
+		}
+		void evaluateSelection();
+	}
+
 	// Attach the selection/dismiss listeners while a body element exists. `$effect`
 	// re-runs (and cleans up) whenever `bodyEl` changes, e.g. when a new card is
 	// drawn into the shared CardView.
@@ -144,16 +160,15 @@
 		if (!bodyEl) {
 			return;
 		}
-		const onMouseUp = () => void evaluateSelection();
-		document.addEventListener('mouseup', onMouseUp);
-		document.addEventListener('keyup', onMouseUp);
-		document.addEventListener('touchend', onMouseUp);
+		document.addEventListener('mouseup', onSelectionEvent);
+		document.addEventListener('keyup', onSelectionEvent);
+		document.addEventListener('touchend', onSelectionEvent);
 		document.addEventListener('pointerdown', onPointerDown, true);
 		document.addEventListener('keydown', onKeydown, true);
 		return () => {
-			document.removeEventListener('mouseup', onMouseUp);
-			document.removeEventListener('keyup', onMouseUp);
-			document.removeEventListener('touchend', onMouseUp);
+			document.removeEventListener('mouseup', onSelectionEvent);
+			document.removeEventListener('keyup', onSelectionEvent);
+			document.removeEventListener('touchend', onSelectionEvent);
 			document.removeEventListener('pointerdown', onPointerDown, true);
 			document.removeEventListener('keydown', onKeydown, true);
 		};

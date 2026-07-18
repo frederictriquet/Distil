@@ -58,6 +58,9 @@
 	let triggerEl: HTMLButtonElement | null = $state(null);
 	let panelEl: HTMLElement | null = $state(null);
 	let closeButtonEl: HTMLButtonElement | null = $state(null);
+	// Fallback focus target for `closePanel`, since deleting the last
+	// annotation swaps the trigger button out for this empty-state affordance.
+	let emptyStateEl: HTMLParagraphElement | null = $state(null);
 
 	// Reset the overlay and consultation whenever the card changes: an actual
 	// navigation to another card reloads `load`, so the server list becomes
@@ -90,7 +93,10 @@
 			return;
 		}
 		panelOpen = false;
-		void tick().then(() => triggerEl?.focus());
+		// The trigger button is only rendered while there is at least one
+		// annotation; a delete that empties the list swaps it out for the
+		// empty-state paragraph, so restore focus to whichever is connected.
+		void tick().then(() => (triggerEl?.isConnected ? triggerEl : emptyStateEl)?.focus());
 	}
 
 	function consult(id: number): void {
@@ -192,9 +198,14 @@
 		};
 	};
 
-	// Enhance the delete: drop the annotation locally and return to the list
-	// (again without a redraw). The body highlight is server-rendered and stays
-	// until the next navigation, mirroring the bookmark panel's no-redraw model.
+	// Enhance the delete: drop the annotation locally (again without a redraw;
+	// the body highlight is server-rendered and stays until the next
+	// navigation, mirroring the bookmark panel's no-redraw model). When the
+	// deletion empties the list there is nothing left to consult or list, so
+	// the panel closes and focus returns to the trigger (falling back to the
+	// empty-state affordance, since the trigger button itself is replaced by
+	// it once the count drops to zero); otherwise the panel stays open on the
+	// list, with focus moved to the close button.
 	const deleteEnhance: SubmitFunction = () => {
 		saving = true;
 		return async ({ result }) => {
@@ -205,6 +216,11 @@
 					deletedIds = new Set(deletedIds).add(removedId);
 				}
 				backToList();
+				if (annotations.length === 0) {
+					closePanel();
+				} else {
+					void tick().then(() => closeButtonEl?.focus());
+				}
 			} else if (result.type === 'failure') {
 				editError = (result.data as { error?: string })?.error ?? 'Could not delete the annotation.';
 			} else if (result.type === 'error') {
@@ -231,7 +247,13 @@
 	<!-- Empty state (task 15.10): a card with no annotations shows a clear "no
 	     annotations yet" affordance in the same visual language as the app's other
 	     empty states (a muted, dashed block), and never a spurious "(0)" count. -->
-	<p class="annotations-entry annotations-entry--empty">No annotations yet</p>
+	<p
+		class="annotations-entry annotations-entry--empty"
+		bind:this={emptyStateEl}
+		tabindex="-1"
+	>
+		No annotations yet
+	</p>
 {/if}
 
 {#if panelOpen}

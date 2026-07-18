@@ -34,6 +34,12 @@ type Db = ReturnType<typeof createDb>;
 /** Maximum accepted length of an annotation note, enforced at the boundary. */
 export const MAX_NOTE_LENGTH = 10_000;
 
+/** Maximum accepted length of an anchor's quote, enforced at the boundary. */
+export const MAX_QUOTE_LENGTH = 10_000;
+
+/** Maximum accepted length of an anchor's prefix/suffix context, enforced at the boundary. */
+export const MAX_CONTEXT_LENGTH = 500;
+
 /**
  * A TextQuoteSelector-style anchor (W3C Web Annotation model): the exact quoted
  * (selected) text, a short context before and after it, and an indicative
@@ -114,11 +120,20 @@ export function parseAnchor(raw: unknown): ParseAnchorResult {
 	if (typeof quote !== 'string' || quote.length === 0) {
 		return { ok: false, error: 'Annotation anchor quote is required.' };
 	}
+	if (quote.length > MAX_QUOTE_LENGTH) {
+		return { ok: false, error: `Annotation anchor quote must be at most ${MAX_QUOTE_LENGTH} characters.` };
+	}
 	if (typeof prefix !== 'string') {
 		return { ok: false, error: 'Annotation anchor prefix must be a string.' };
 	}
+	if (prefix.length > MAX_CONTEXT_LENGTH) {
+		return { ok: false, error: `Annotation anchor prefix must be at most ${MAX_CONTEXT_LENGTH} characters.` };
+	}
 	if (typeof suffix !== 'string') {
 		return { ok: false, error: 'Annotation anchor suffix must be a string.' };
+	}
+	if (suffix.length > MAX_CONTEXT_LENGTH) {
+		return { ok: false, error: `Annotation anchor suffix must be at most ${MAX_CONTEXT_LENGTH} characters.` };
 	}
 	if (typeof startOffset !== 'number' || !Number.isInteger(startOffset) || startOffset < 0) {
 		return { ok: false, error: 'Annotation anchor offset must be a non-negative integer.' };

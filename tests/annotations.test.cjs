@@ -248,6 +248,44 @@ describe('validating an annotation anchor at the boundary (task 15.2)', () => {
 		assert.equal(result.ok, true);
 		assert.deepEqual(result.value, { quote: 'edge', prefix: '', suffix: '', startOffset: 0 });
 	});
+
+	test('rejects a quote longer than the maximum length', () => {
+		const result = runAnnotations(dbPath, 'parseAnchor', {
+			raw: { quote: 'x'.repeat(10_001), prefix: 'a', suffix: 'b', startOffset: 0 }
+		});
+		assert.equal(result.ok, false);
+		assert.match(result.error, /quote.*at most/i);
+	});
+
+	test('accepts a quote at exactly the maximum length', () => {
+		const result = runAnnotations(dbPath, 'parseAnchor', {
+			raw: { quote: 'x'.repeat(10_000), prefix: 'a', suffix: 'b', startOffset: 0 }
+		});
+		assert.equal(result.ok, true);
+	});
+
+	test('rejects a prefix longer than the maximum context length', () => {
+		const result = runAnnotations(dbPath, 'parseAnchor', {
+			raw: { quote: 'q', prefix: 'x'.repeat(501), suffix: 'b', startOffset: 0 }
+		});
+		assert.equal(result.ok, false);
+		assert.match(result.error, /prefix.*at most/i);
+	});
+
+	test('rejects a suffix longer than the maximum context length', () => {
+		const result = runAnnotations(dbPath, 'parseAnchor', {
+			raw: { quote: 'q', prefix: 'a', suffix: 'x'.repeat(501), startOffset: 0 }
+		});
+		assert.equal(result.ok, false);
+		assert.match(result.error, /suffix.*at most/i);
+	});
+
+	test('accepts a prefix and suffix at exactly the maximum context length', () => {
+		const result = runAnnotations(dbPath, 'parseAnchor', {
+			raw: { quote: 'q', prefix: 'x'.repeat(500), suffix: 'y'.repeat(500), startOffset: 0 }
+		});
+		assert.equal(result.ok, true);
+	});
 });
 
 describe('creating and listing a card\'s annotations (task 15.2)', () => {

@@ -451,6 +451,26 @@ describe('a card with annotations on the consultation route /cards/<id> (tasks 1
 		assert.equal(res.status, 404);
 	});
 
+	test('deleting with a non-numeric annotation id answers 400, not a 404 or a silent ok', async () => {
+		const before = storedNote(dbPath, 1);
+		const res = await postAction(app.baseUrl, '/cards/1?/deleteAnnotation', {
+			cookie,
+			fields: { annotationId: 'not-a-number' }
+		});
+		assert.equal(res.status, 400);
+		assert.equal(storedNote(dbPath, 1), before, 'an invalid id must not delete anything');
+	});
+
+	test('updating with a non-numeric annotation id answers 400, not a 404 or a silent ok', async () => {
+		const before = storedNote(dbPath, 1);
+		const res = await postAction(app.baseUrl, '/cards/1?/updateAnnotation', {
+			cookie,
+			fields: { annotationId: 'not-a-number', note: 'ignored' }
+		});
+		assert.equal(res.status, 400);
+		assert.equal(storedNote(dbPath, 1), before, 'an invalid id must not change the note');
+	});
+
 	test('deleting an annotation removes it from the DB (task 15.8)', async () => {
 		const res = await postAction(app.baseUrl, '/cards/1?/deleteAnnotation', {
 			cookie,
