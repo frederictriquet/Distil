@@ -24,8 +24,8 @@
 // longer exists trips the foreign-key constraint, which we translate into a
 // handled result rather than letting it crash with a 500.
 
-import { asc, eq } from 'drizzle-orm';
-import { annotations } from './db/schema';
+import { asc, desc, eq } from 'drizzle-orm';
+import { annotations, cards } from './db/schema';
 import type { createDb } from './db';
 
 /** The shared Drizzle database handle type. */
@@ -198,6 +198,52 @@ export function createAnnotation(
 		}
 		throw error;
 	}
+}
+
+/**
+ * A stored annotation together with the card it belongs to, for the global
+ * annotations list page (task 15.12): the note and original quote plus the
+ * owning card's identity (id/title/slug and whether it is still active) so the
+ * page can show which card each annotation came from and link to it.
+ */
+export interface AnnotationWithCard {
+	id: number;
+	cardId: number;
+	note: string;
+	quote: string;
+	cardTitle: string;
+	cardSlug: string;
+	cardActive: boolean;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+/**
+ * List every annotation across all cards (task 15.12), inner-joined to its
+ * owning card for the card's title/slug/active flag. The annotation's card
+ * reference is NOT NULL and cascades on a hard card deletion, so every stored
+ * annotation always has a matching card row (an inner join drops nothing). The
+ * list is ordered most-recent-first (creation time then id, descending) for a
+ * stable display. Mirrors `bookmarks.ts`'s `listBookmarksByCategory` style:
+ * an explicit Drizzle handle, no SvelteKit imports, unit-testable.
+ */
+export function listAllAnnotationsWithCard(db: Db): AnnotationWithCard[] {
+	return db
+		.select({
+			id: annotations.id,
+			cardId: annotations.cardId,
+			note: annotations.note,
+			quote: annotations.quote,
+			cardTitle: cards.title,
+			cardSlug: cards.slug,
+			cardActive: cards.active,
+			createdAt: annotations.createdAt,
+			updatedAt: annotations.updatedAt
+		})
+		.from(annotations)
+		.innerJoin(cards, eq(cards.id, annotations.cardId))
+		.orderBy(desc(annotations.createdAt), desc(annotations.id))
+		.all();
 }
 
 /**

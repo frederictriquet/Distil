@@ -15,7 +15,8 @@
 		{ href: '/', label: 'Study' },
 		{ href: '/cards', label: 'Cards' },
 		{ href: '/kb', label: 'Knowledge bases' },
-		{ href: '/bookmarks', label: 'Bookmarks' }
+		{ href: '/bookmarks', label: 'Bookmarks' },
+		{ href: '/annotations', label: 'Annotations' }
 	];
 
 	// The login screen stands on its own, before the app shell is relevant, so it

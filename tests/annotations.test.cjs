@@ -71,6 +71,8 @@ function run() {
 			return an.createAnnotation(db, payload.cardId, payload.note, payload.anchor);
 		case 'list':
 			return an.listAnnotationsForCard(db, payload.cardId);
+		case 'listAll':
+			return an.listAllAnnotationsWithCard(db);
 		case 'update':
 			return { value: an.updateAnnotationNote(db, payload.id, payload.note) };
 		case 'delete':
@@ -366,6 +368,69 @@ describe('deleting an annotation by id (task 15.2)', () => {
 	test('deleting a missing id reports nothing deleted, not a silent success', () => {
 		const result = runAnnotations(dbPath, 'delete', { id: annotationId });
 		assert.equal(result.deleted, false);
+	});
+});
+
+describe('listing every annotation across cards with its owning card (task 15.12)', () => {
+	let workDir;
+	let dbPath;
+	let cardAId;
+	let cardBId;
+
+	before(() => {
+		workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'distil-annotations-list-all-'));
+		dbPath = path.join(workDir, 'annotations.db');
+		cardAId = migrateAndSeedCard(dbPath, 'a');
+		cardBId = migrateAndSeedCard(dbPath, 'b');
+	});
+
+	after(() => {
+		if (workDir) fs.rmSync(workDir, { recursive: true, force: true });
+	});
+
+	test('with no annotations at all the global list is empty (empty state)', () => {
+		assert.deepEqual(runAnnotations(dbPath, 'listAll', {}), []);
+	});
+
+	test('lists annotations from every card, each carrying its owning card identity', () => {
+		runAnnotations(dbPath, 'create', { cardId: cardAId, note: 'Note on A', anchor: VALID_ANCHOR });
+		runAnnotations(dbPath, 'create', { cardId: cardBId, note: 'Note on B', anchor: VALID_ANCHOR });
+
+		const list = runAnnotations(dbPath, 'listAll', {});
+		assert.equal(list.length, 2, 'both cards\' annotations must appear in the global list');
+
+		const onA = list.find((a) => a.note === 'Note on A');
+		const onB = list.find((a) => a.note === 'Note on B');
+		assert.ok(onA && onB);
+		assert.equal(onA.cardId, cardAId);
+		assert.equal(onA.quote, VALID_ANCHOR.quote);
+		assert.equal(onA.cardTitle, 'Card a');
+		assert.equal(onA.cardSlug, 'card-a');
+		assert.equal(onA.cardActive, true);
+		assert.equal(onB.cardId, cardBId);
+		assert.equal(onB.cardTitle, 'Card b');
+	});
+
+	test('is ordered most-recent-first (creation then id, descending)', () => {
+		const list = runAnnotations(dbPath, 'listAll', {});
+		// The two annotations may share the same unixepoch second, so the tie-break
+		// on descending id keeps the last-inserted one first.
+		assert.ok(list[0].id > list[1].id, 'the most recently created annotation must come first');
+	});
+
+	test('keeps listing an annotation whose card was soft-deleted, flagged inactive', () => {
+		const raw = new Database(dbPath);
+		try {
+			raw.pragma('foreign_keys = ON');
+			raw.prepare('UPDATE cards SET active = 0 WHERE id = ?').run(cardAId);
+		} finally {
+			raw.close();
+		}
+
+		const list = runAnnotations(dbPath, 'listAll', {});
+		const onA = list.find((a) => a.cardId === cardAId);
+		assert.ok(onA, 'a soft-deleted card must keep its annotation listed globally');
+		assert.equal(onA.cardActive, false, 'the owning card must be reported as inactive');
 	});
 });
 
