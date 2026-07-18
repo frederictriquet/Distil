@@ -227,6 +227,11 @@
 			Annotations ({annotations.length})
 		</button>
 	</div>
+{:else}
+	<!-- Empty state (task 15.10): a card with no annotations shows a clear "no
+	     annotations yet" affordance in the same visual language as the app's other
+	     empty states (a muted, dashed block), and never a spurious "(0)" count. -->
+	<p class="annotations-entry annotations-entry--empty">No annotations yet</p>
 {/if}
 
 {#if panelOpen}
@@ -272,7 +277,12 @@
 
 				<blockquote class="panel__quote">{selected.quote}</blockquote>
 				{#if selected.detached}
+					<!-- A detached annotation (task 15.9): its anchor no longer resolves
+					     against the re-synced body, so it carries no highlight. It stays
+					     listed, editable and deletable; the badge flags the lost anchor
+					     (mirroring the archived-card philosophy, roadmap 12.3). -->
 					<p class="panel__detached">
+						<span class="panel__badge">Detached</span>
 						This annotation's text was not found in the current card body, so it is
 						not highlighted.
 					</p>
@@ -324,7 +334,15 @@
 								class="panel__item"
 								onclick={() => consult(annotation.id)}
 							>
-								<span class="panel__item-quote">{annotation.quote}</span>
+								<span class="panel__item-head">
+									<span class="panel__item-quote">{annotation.quote}</span>
+									{#if annotation.detached}
+										<!-- Flag a detached annotation in the list (task 15.9): it
+										     shows its original quote and note and stays editable and
+										     deletable, it just carries no body highlight. -->
+										<span class="panel__badge">Detached</span>
+									{/if}
+								</span>
 								<span class="panel__item-note">{annotation.note}</span>
 							</button>
 						</li>
@@ -338,6 +356,33 @@
 <style>
 	.annotations-entry {
 		display: flex;
+	}
+
+	/* Empty-state affordance (task 15.10): the same muted, dashed visual language
+	   as EmptyState, sized for the card's action area. */
+	.annotations-entry--empty {
+		margin: 0;
+		padding: var(--space-2) var(--space-3);
+		border: 1px dashed var(--color-border);
+		border-radius: var(--radius-md);
+		color: var(--color-text-muted);
+		font-size: var(--text-sm);
+	}
+
+	/* "Detached" flag (task 15.9): a small pill, theme tokens only so it follows
+	   light/dark. Used in the list and in the consultation view. */
+	.panel__badge {
+		display: inline-block;
+		flex: none;
+		padding: 0 var(--space-2);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background-color: var(--color-surface-muted);
+		color: var(--color-text-muted);
+		font-size: var(--text-sm);
+		font-style: normal;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
 	}
 
 	/* Same modal treatment as the bookmark panel (8.7): mobile-first, theme
@@ -431,6 +476,13 @@
 		background-color: var(--color-surface-alt);
 	}
 
+	.panel__item-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: var(--space-2);
+	}
+
 	.panel__item-quote {
 		color: var(--color-text-muted);
 		font-style: italic;
@@ -453,6 +505,10 @@
 	}
 
 	.panel__detached {
+		display: flex;
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: var(--space-2);
 		margin: 0;
 		color: var(--color-text-muted);
 		font-size: var(--text-sm);
