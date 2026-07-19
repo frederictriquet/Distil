@@ -39,5 +39,11 @@
 		"marked": "^18.0.5",
 		"marked-highlight": "^2.2.4",
 		"simple-git": "^3.36.0"
+	},
+	"overrides": {
+		"cookie": "^0.7.0",
+		"@esbuild-kit/core-utils": {
+			"esbuild": "^0.25.0"
+		}
 	}
 }
