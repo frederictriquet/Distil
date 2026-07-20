@@ -85,6 +85,10 @@
 		note = '';
 		anchor = null;
 		error = null;
+		// Clear the underlying DOM selection on dismiss so a later selectionchange
+		// cannot re-open the popup from a stale selection, and the user is not left
+		// with text still highlighted after cancelling.
+		window.getSelection()?.removeAllRanges();
 	}
 
 	/** Evaluate the current selection and (re)open the popup when it is inside the body. */
@@ -137,20 +141,27 @@
 		}
 	}
 
+	let debounceId: ReturnType<typeof setTimeout> | null = null;
+
 	/**
-	 * A selection-changing event (mouseup/keyup/touchend) coming from inside the
-	 * popup itself — typing in the note field, releasing Escape/Cancel — is not a
-	 * change to the document selection in the card body and must not re-run
-	 * `evaluateSelection`: doing so would needlessly re-evaluate on every
-	 * keystroke, and re-open the popup right after Escape/Cancel closed it (the
-	 * original body selection is still active at that point, since focusing the
-	 * note field programmatically never cleared it).
+	 * The `selectionchange` event is the canonical, cross-platform signal for "the
+	 * user changed the text selection" — unlike mouseup/touchend it fires on
+	 * desktop mouse drags AND on mobile, where selection is made by long-press and
+	 * then adjusted with drag handles that emit no mouseup/touchend. We debounce so
+	 * the popup only appears once the selection settles (not on every intermediate
+	 * step of a drag), which also avoids re-evaluating on every keystroke while the
+	 * note field is focused. `evaluateSelection` itself ignores selections outside
+	 * the card body (e.g. a caret placed in the note textarea), so typing never
+	 * reopens or repositions the popup.
 	 */
-	function onSelectionEvent(event: Event): void {
-		if (popupEl && event.target instanceof Node && popupEl.contains(event.target)) {
-			return;
+	function onSelectionChange(): void {
+		if (debounceId !== null) {
+			clearTimeout(debounceId);
 		}
-		void evaluateSelection();
+		debounceId = setTimeout(() => {
+			debounceId = null;
+			void evaluateSelection();
+		}, 180);
 	}
 
 	// Attach the selection/dismiss listeners while a body element exists. `$effect`
@@ -160,15 +171,15 @@
 		if (!bodyEl) {
 			return;
 		}
-		document.addEventListener('mouseup', onSelectionEvent);
-		document.addEventListener('keyup', onSelectionEvent);
-		document.addEventListener('touchend', onSelectionEvent);
+		document.addEventListener('selectionchange', onSelectionChange);
 		document.addEventListener('pointerdown', onPointerDown, true);
 		document.addEventListener('keydown', onKeydown, true);
 		return () => {
-			document.removeEventListener('mouseup', onSelectionEvent);
-			document.removeEventListener('keyup', onSelectionEvent);
-			document.removeEventListener('touchend', onSelectionEvent);
+			if (debounceId !== null) {
+				clearTimeout(debounceId);
+				debounceId = null;
+			}
+			document.removeEventListener('selectionchange', onSelectionChange);
 			document.removeEventListener('pointerdown', onPointerDown, true);
 			document.removeEventListener('keydown', onKeydown, true);
 		};
