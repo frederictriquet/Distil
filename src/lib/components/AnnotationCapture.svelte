@@ -1,23 +1,30 @@
 <script lang="ts">
-	// Annotation capture popup (roadmap 15.4). When the user selects a run of text
-	// INSIDE the card body, a minimal popup appears near the selection to type a
-	// note; Save posts the note together with the anchor derived from the DOM
-	// selection to the current route's shared `annotate` action (15.5). Because it
-	// lives in CardView it is reached by every card route (study `/` and both
-	// consultation routes) exactly like the shared action bar — never duplicated.
+	// Annotation capture (roadmap 15.4), two-stage so it never fights the browser's
+	// own text selection:
+	//   1. PROMPT — when the user selects a run of text INSIDE the card body, a
+	//      small floating "Add note" button appears near the selection. Crucially
+	//      nothing steals focus here, so the selection (and, on mobile, the native
+	//      selection handles) stays put. This is the fix for the selection being
+	//      cleared the instant the mouse was released / the touch ended.
+	//   2. EDIT — clicking that button opens the note editor (the quoted text plus
+	//      a textarea) and focuses it; losing the visual selection now is fine
+	//      because the quote is shown in the popup. Save posts the note together
+	//      with the anchor to the current route's shared `annotate` action (15.5).
+	//
+	// Because it lives in CardView it is reached by every card route (study `/` and
+	// both consultation routes) exactly like the shared action bar — never
+	// duplicated.
 	//
 	// The anchor is a W3C TextQuoteSelector, the same shape the server module and
-	// the resolver expect (see $lib/server/annotations and annotation-anchor): the
-	// exact selected text (quote), short prefix/suffix context, and the character
-	// offset of the selection start. All are computed in the body's PLAIN-TEXT
-	// coordinate space (Range/textContent, tags dropped, no synthetic whitespace)
-	// so they line up with the resolver, which works on the rendered body's
-	// `textContent`.
+	// resolver expect: the exact selected text (quote), short prefix/suffix
+	// context, and the character offset of the selection start, all computed in the
+	// body's PLAIN-TEXT coordinate space (Range/textContent) so they line up with
+	// the resolver.
 	//
-	// The popup is dismissible the snappy ways — Cancel, Escape, or a click
-	// outside — moves focus into the input on open, and is styled entirely with
-	// theme tokens so it follows light/dark mode and stays usable on mobile.
-	import { tick } from 'svelte';
+	// Detection is driven by the canonical `selectionchange` event (debounced): it
+	// fires for desktop mouse drags AND mobile long-press + handle adjustments,
+	// unlike mouseup/touchend which never fire for mobile selection.
+	import { tick, untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import type { SubmitFunction } from '@sveltejs/kit';
 
@@ -40,7 +47,9 @@
 		startOffset: number;
 	}
 
-	let open = $state(false);
+	// 'hidden' → nothing shown; 'prompt' → the floating "Add note" button is shown
+	// next to a live selection; 'edit' → the note editor is open.
+	let mode = $state<'hidden' | 'prompt' | 'edit'>('hidden');
 	let note = $state('');
 	let anchor = $state<Anchor | null>(null);
 	let error = $state<string | null>(null);
@@ -81,19 +90,28 @@
 	}
 
 	function close(): void {
-		open = false;
+		mode = 'hidden';
 		note = '';
 		anchor = null;
 		error = null;
-		// Clear the underlying DOM selection on dismiss so a later selectionchange
-		// cannot re-open the popup from a stale selection, and the user is not left
-		// with text still highlighted after cancelling.
-		window.getSelection()?.removeAllRanges();
 	}
 
-	/** Evaluate the current selection and (re)open the popup when it is inside the body. */
-	async function evaluateSelection(): Promise<void> {
-		if (!bodyEl) {
+	/** Position the floating UI just below `rect`, clamped into the viewport. */
+	function positionTo(rect: DOMRect): void {
+		const width = 20 * 16;
+		left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+		top = Math.min(rect.bottom + 8, window.innerHeight - 8);
+	}
+
+	/**
+	 * Evaluate the current selection and show the "Add note" prompt when it is a
+	 * non-empty run inside the card body. Never steals focus or clears the
+	 * selection — that is what let the browser "take over" before. While the editor
+	 * is open we ignore selection changes (the caret moving into the textarea must
+	 * not reset anything).
+	 */
+	function evaluateSelection(): void {
+		if (!bodyEl || mode === 'edit') {
 			return;
 		}
 		const selection = window.getSelection();
@@ -102,7 +120,7 @@
 		}
 		const range = selection.getRangeAt(0);
 		// Only capture selections wholly contained in the card body; anything else
-		// (the popup's own textarea, other page chrome) is left alone.
+		// (page chrome, the popup itself) is left alone.
 		if (!bodyEl.contains(range.commonAncestorContainer)) {
 			return;
 		}
@@ -112,65 +130,50 @@
 		}
 		anchor = next;
 		error = null;
+		positionTo(range.getBoundingClientRect());
+		mode = 'prompt';
+	}
 
-		const rect = range.getBoundingClientRect();
-		// Place the popup just below the selection, clamped into the viewport so it
-		// stays reachable on small/mobile screens.
-		const width = 20 * 16;
-		left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-		top = Math.min(rect.bottom + 8, window.innerHeight - 8);
-		open = true;
+	/** Move from the prompt to the editor and focus the note field. */
+	async function openEditor(): Promise<void> {
+		if (!anchor) {
+			return;
+		}
+		mode = 'edit';
 		await tick();
 		noteInput?.focus();
 	}
 
-	function onPointerDown(event: PointerEvent): void {
-		// A click/tap outside the popup dismisses it (equivalent to Cancel). A new
-		// selection also starts with a pointer down in the body: closing here is
-		// harmless because the following selection event reopens the popup.
-		if (open && popupEl && event.target instanceof Node && !popupEl.contains(event.target)) {
-			close();
-		}
-	}
-
-	function onKeydown(event: KeyboardEvent): void {
-		if (open && event.key === 'Escape') {
-			event.preventDefault();
-			close();
-			bodyEl?.focus();
-		}
-	}
-
 	let debounceId: ReturnType<typeof setTimeout> | null = null;
 
-	/**
-	 * The `selectionchange` event is the canonical, cross-platform signal for "the
-	 * user changed the text selection" — unlike mouseup/touchend it fires on
-	 * desktop mouse drags AND on mobile, where selection is made by long-press and
-	 * then adjusted with drag handles that emit no mouseup/touchend. We debounce so
-	 * the popup only appears once the selection settles (not on every intermediate
-	 * step of a drag), which also avoids re-evaluating on every keystroke while the
-	 * note field is focused. `evaluateSelection` itself ignores selections outside
-	 * the card body (e.g. a caret placed in the note textarea), so typing never
-	 * reopens or repositions the popup.
-	 */
 	function onSelectionChange(): void {
 		if (debounceId !== null) {
 			clearTimeout(debounceId);
 		}
 		debounceId = setTimeout(() => {
 			debounceId = null;
-			void evaluateSelection();
-		}, 180);
+			evaluateSelection();
+		}, 150);
 	}
 
-	// Attach the selection/dismiss listeners while a body element exists. `$effect`
-	// re-runs (and cleans up) whenever `bodyEl` changes, e.g. when a new card is
-	// drawn into the shared CardView.
-	$effect(() => {
-		if (!bodyEl) {
-			return;
+	function onPointerDown(event: PointerEvent): void {
+		// A click/tap outside the floating UI dismisses it.
+		if (mode !== 'hidden' && popupEl && event.target instanceof Node && !popupEl.contains(event.target)) {
+			close();
 		}
+	}
+
+	function onKeydown(event: KeyboardEvent): void {
+		if (mode !== 'hidden' && event.key === 'Escape') {
+			event.preventDefault();
+			close();
+		}
+	}
+
+	// Attach the selection/dismiss listeners once on mount. They intentionally do
+	// NOT depend on `bodyEl` (which is checked at call time inside the handlers),
+	// so a late `bind:this` assignment can never leave them unattached.
+	$effect(() => {
 		document.addEventListener('selectionchange', onSelectionChange);
 		document.addEventListener('pointerdown', onPointerDown, true);
 		document.addEventListener('keydown', onKeydown, true);
@@ -185,17 +188,23 @@
 		};
 	});
 
-	// A new card invalidates any in-flight capture.
+	// A new card invalidates any in-flight capture. This effect must fire ONLY when
+	// `cardId` changes — reading `mode` reactively here would make it re-run the
+	// instant a selection sets mode to 'prompt', immediately closing it again
+	// (the bug that made the popup never appear). `untrack` keeps the mode read out
+	// of the dependency set.
 	$effect(() => {
 		void cardId;
-		if (open) {
-			close();
-		}
+		untrack(() => {
+			if (mode !== 'hidden') {
+				close();
+			}
+		});
 	});
 
-	// Enhance the save: reflect success locally by simply closing the popup (no
-	// invalidateAll, so the current card stays on screen — mirroring the bookmark
-	// panel). A validation failure surfaces the server's message in place.
+	// Enhance the save: reflect success locally by simply closing (no invalidateAll,
+	// so the current card stays on screen — mirroring the bookmark panel). A
+	// validation failure surfaces the server's message in place.
 	const saveEnhance: SubmitFunction = () => {
 		saving = true;
 		return async ({ result }) => {
@@ -212,47 +221,54 @@
 </script>
 
 <!-- Always-rendered root so every card page carries the capture UI in its markup
-     (the popup itself only mounts client-side once a selection exists). -->
+     (the floating prompt/editor only mounts client-side once a selection exists). -->
 <div class="annotation-capture" data-annotation-capture>
-	{#if open && anchor}
+	{#if mode !== 'hidden' && anchor}
 		<div
 			class="capture"
+			class:capture--prompt={mode === 'prompt'}
 			role="dialog"
 			aria-label="Add annotation"
 			bind:this={popupEl}
 			style="top: {top}px; left: {left}px;"
 		>
-			<form method="POST" action="?/annotate" use:enhance={saveEnhance} class="capture__form">
-				<input type="hidden" name="cardId" value={cardId} />
-				<input type="hidden" name="quote" value={anchor.quote} />
-				<input type="hidden" name="prefix" value={anchor.prefix} />
-				<input type="hidden" name="suffix" value={anchor.suffix} />
-				<input type="hidden" name="startOffset" value={anchor.startOffset} />
+			{#if mode === 'prompt'}
+				<button type="button" class="capture__add primary" onclick={openEditor}>
+					+ Add note
+				</button>
+			{:else}
+				<form method="POST" action="?/annotate" use:enhance={saveEnhance} class="capture__form">
+					<input type="hidden" name="cardId" value={cardId} />
+					<input type="hidden" name="quote" value={anchor.quote} />
+					<input type="hidden" name="prefix" value={anchor.prefix} />
+					<input type="hidden" name="suffix" value={anchor.suffix} />
+					<input type="hidden" name="startOffset" value={anchor.startOffset} />
 
-				<blockquote class="capture__quote">{anchor.quote}</blockquote>
-				<label class="capture__field">
-					<span class="capture__label">Note</span>
-					<textarea
-						name="note"
-						rows="3"
-						bind:this={noteInput}
-						bind:value={note}
-						placeholder="Write a note about the selected text…"
-						required
-					></textarea>
-				</label>
+					<blockquote class="capture__quote">{anchor.quote}</blockquote>
+					<label class="capture__field">
+						<span class="capture__label">Note</span>
+						<textarea
+							name="note"
+							rows="3"
+							bind:this={noteInput}
+							bind:value={note}
+							placeholder="Write a note about the selected text…"
+							required
+						></textarea>
+					</label>
 
-				{#if error}
-					<p class="capture__error" role="alert">{error}</p>
-				{/if}
+					{#if error}
+						<p class="capture__error" role="alert">{error}</p>
+					{/if}
 
-				<div class="capture__actions">
-					<button type="button" onclick={close}>Cancel</button>
-					<button type="submit" class="primary" disabled={saving || note.trim().length === 0}>
-						Save
-					</button>
-				</div>
-			</form>
+					<div class="capture__actions">
+						<button type="button" onclick={close}>Cancel</button>
+						<button type="submit" class="primary" disabled={saving || note.trim().length === 0}>
+							Save
+						</button>
+					</div>
+				</form>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -269,6 +285,19 @@
 		background-color: var(--color-surface);
 		color: var(--color-text);
 		box-shadow: var(--shadow-md);
+	}
+
+	/* The prompt is a compact chip, not a full panel. */
+	.capture--prompt {
+		width: auto;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		box-shadow: none;
+	}
+
+	.capture__add {
+		white-space: nowrap;
 	}
 
 	.capture__form {
